@@ -72,8 +72,10 @@ npx ts-node scripts/seed-demo.ts   # demo channel + funds demo wallets (SOL AND 
 - **`withdraw` is gated on channel status `Closed`** (state committed back to base layer).
 - **Conservation of funds** (test this): at all times
   `total deposits == Σ Member.balance + Σ unresolved Round pools + Σ resolved-but-unclaimed pools`.
-- **`close_channel` force-claims all unclaimed positions before commit/undelegate** (ER txns are
-  free) so no winnings are stranded when a client is offline at resolution.
+- **`claim_round` and `lock_round` are permissionless AND signerless** (crank-compatible).
+  Clients auto-claim on resolution; the host loop claims for every member before
+  `close_channel` so no winnings are stranded (ER txns are free). Rounds are released after
+  close via batched `commit_rounds`.
 - Delegation lifecycle: base layer `create_channel`/`join_channel` → `go_live` delegates
   Channel/Members/Rounds → ER runs `open_round`/`stake`/`lock_round`(crank)/`resolve`/`claim` →
   `close_channel` commits + undelegates → base layer `withdraw`.
@@ -93,7 +95,8 @@ npx ts-node scripts/seed-demo.ts   # demo channel + funds demo wallets (SOL AND 
 - [x] Phase 1 — program skeleton on localnet (accounts, instructions 1–3 + 10, tests)
 - [x] Phase 2 — delegation integration on devnet (dual connections; lifecycle proven by
       `scripts/phase2-lifecycle.ts`; mock USDC mint + endpoints in docs/decisions.md)
-- [ ] Phase 3 — round engine in the ER (open/stake/lock/resolve/claim + crank + simulator)
+- [x] Phase 3 — round engine in the ER (crank-locked rounds proven on devnet by
+      `scripts/phase3-simulate.ts`: 93 ER txs · 1 settlement · conservation exact)
 - [ ] Phase 4 — mobile app core (MWA connect, session keys, three screens, live odds)
 - [ ] Phase 5 — polish + demo video + Luma submission (Sunday)
 

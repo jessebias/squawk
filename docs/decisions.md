@@ -71,10 +71,39 @@ Newest at the bottom. Format: date · decision · why.
   `6Y57FeacYsDDsCqtphxVQPDvrnhUiuYCoYfnwGe5D262`. Proof run: 2 ER txs, 1 settlement commitment
   (`3rDKLQ…m8wG`), verified via `scripts/phase2-lifecycle.ts`.
 
-## Open questions (resolve in Phase 3/4)
+## 2026-07-11 — Phase 3 (round engine, accepted on devnet)
 
-- ER clock semantics for `locks_at`/`resolves_by` — verify against docs when building the round
-  engine; add tolerance (Phase 3).
-- Rounds: pre-create+delegate at `go_live` vs ER-native ephemeral accounts (Phase 3).
-- Official Session Keys SDK React hooks in React Native vs burner-keypair fallback (Phase 4).
-- Which MWA wallet app on the demo devices (Phantom / Solflare / fakewallet) (Phase 4).
+- **Position embedded in Member, no standalone Position PDAs** (deviation from docs/plan.md
+  §5.1). Rounds are sequential, so one open position per member suffices:
+  `Member.position {round_index, side, amount}`; `amount == 0` = none. Staking a new round
+  requires claiming the old one (clients auto-claim; `PositionPending` guards). Eliminates all
+  account creation on the ER — neither pre-allocation (800 PDAs) nor `#[ephemeral_accounts]`
+  integration was needed.
+- **Rounds are pre-created (base, while Open) + delegated after go_live** — they must exist on
+  base for settlement anyway; ~10–40 small PDAs is cheap. `create_round` is sequential
+  (`RoundOutOfOrder`).
+- **`lock_round` and `claim_round` are signerless + permissionless** so the MagicBlock crank can
+  fire them and any client can fall back. Claims can only ever credit the position's own member.
+- **The crank works**: `schedule_lock_crank` (one-shot ScheduleTask CPI to the Magic program) —
+  in the 10-round devnet simulation **all 10 locks fired by crank**, 0 manual fallbacks. API
+  drift note: `ScheduleTaskArgs.task_id`/`execution_interval_millis` are `i64`, not the `u64`
+  shown in the skill doc.
+- **Payout math uses resolve-time snapshots** (`snap_yes/snap_no`) so claim order can't change
+  shares; pools decrement on claim; division dust stays in the round pools and is counted by the
+  conservation invariant (`vault == total_pool == Σ balances + Σ pools`). Simulation settled with
+  zero dust and exact conservation.
+- **`resolve_round` accepts Staking-past-locks_at** so a missed crank can't wedge a round; a
+  round whose winning side is empty becomes `Voided` and claims refund.
+- **`commit_rounds`** (permissionless, `#[commit]`) releases round PDAs in batches after
+  `close_channel` keeps the settlement bundle small (channel + members).
+- **Base RPC for scripts: `https://rpc.magicblock.app/devnet`** — `api.devnet.solana.com`
+  rate-limits (429) the round-creation burst; scripts also pace base-layer txs ~250ms.
+- **ER clock behaved**: 6-second `locks_at` windows locked on time by the crank; no extra
+  tolerance needed at demo timescales.
+- Devnet simulation record: 3 bots × 15 USDC, 10 rounds, 93 ER txs, 1 settlement commitment
+  (`g2PeGc…W5XE`), withdrawals 16.1/7.7/21.2 USDC.
+
+## Open questions (resolve in Phase 4)
+
+- Official Session Keys SDK React hooks in React Native vs burner-keypair fallback.
+- Which MWA wallet app on the demo devices (Phantom / Solflare / fakewallet).

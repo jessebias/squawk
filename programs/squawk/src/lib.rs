@@ -83,6 +83,11 @@ pub mod squawk {
         member.deposited = amount;
         member.balance = amount;
         member.session_key = session_key;
+        member.position = Position {
+            round_index: 0,
+            side: Side::Yes,
+            amount: 0,
+        };
         member.bump = ctx.bumps.member;
 
         let channel = &mut ctx.accounts.channel;
@@ -146,6 +151,297 @@ pub mod squawk {
         Ok(())
     }
 
+    /// Pre-creates the next Round PDA (base layer, while Open — before
+    /// delegation). Rounds are created sequentially; the host script makes
+    /// round_count of them, then delegates each after go_live.
+    pub fn create_round(ctx: Context<CreateRound>, _channel_id: u64, round_index: u16) -> Result<()> {
+        require!(
+            ctx.accounts.channel.status == ChannelStatus::Open,
+            SquawkError::ChannelNotOpen
+        );
+        require!(
+            round_index == ctx.accounts.channel.round_count,
+            SquawkError::RoundOutOfOrder
+        );
+        let round = &mut ctx.accounts.round;
+        round.channel = ctx.accounts.channel.key();
+        round.round_index = round_index;
+        round.question = [0u8; MAX_QUESTION_LEN];
+        round.status = RoundStatus::Pending;
+        round.yes_pool = 0;
+        round.no_pool = 0;
+        round.snap_yes = 0;
+        round.snap_no = 0;
+        round.opens_at = 0;
+        round.locks_at = 0;
+        round.resolves_by = 0;
+        round.bump = ctx.bumps.round;
+        ctx.accounts.channel.round_count += 1;
+        Ok(())
+    }
+
+    /// Instruction 4d — delegate one Round PDA to the ER. Host-only, Live only.
+    pub fn delegate_round(ctx: Context<DelegateRound>, _channel_id: u64, round_index: u16) -> Result<()> {
+        {
+            let data = ctx.accounts.channel.try_borrow_data()?;
+            let ch = Channel::try_deserialize(&mut data.as_ref())?;
+            require!(ch.status == ChannelStatus::Live, SquawkError::ChannelNotLive);
+            require_keys_eq!(ctx.accounts.payer.key(), ch.host, SquawkError::Unauthorized);
+        }
+        let channel_key = ctx.accounts.channel.key();
+        let idx_bytes = round_index.to_le_bytes();
+        ctx.accounts.delegate_round(
+            &ctx.accounts.payer,
+            &[b"round", channel_key.as_ref(), idx_bytes.as_ref()],
+            DelegateConfig::default(),
+        )?;
+        Ok(())
+    }
+
+    /// Instruction 5 — host activates a pre-created round (ER).
+    pub fn open_round(
+        ctx: Context<OpenRound>,
+        round_index: u16,
+        question: String,
+        locks_at: i64,
+        resolves_by: i64,
+    ) -> Result<()> {
+        require!(
+            ctx.accounts.channel.status == ChannelStatus::Live,
+            SquawkError::ChannelNotLive
+        );
+        require!(question.len() <= MAX_QUESTION_LEN, SquawkError::QuestionTooLong);
+        let now = Clock::get()?.unix_timestamp;
+        require!(
+            locks_at > now && resolves_by > locks_at,
+            SquawkError::InvalidRoundTiming
+        );
+        let round = &mut ctx.accounts.round;
+        require!(round.status == RoundStatus::Pending, SquawkError::RoundNotPending);
+
+        let mut q = [0u8; MAX_QUESTION_LEN];
+        q[..question.len()].copy_from_slice(question.as_bytes());
+        round.question = q;
+        round.status = RoundStatus::Staking;
+        round.opens_at = now;
+        round.locks_at = locks_at;
+        round.resolves_by = resolves_by;
+        ctx.accounts.channel.active_round = round_index;
+        Ok(())
+    }
+
+    /// Instruction 6 — stake from the member ledger into a round pool (ER).
+    /// Signed by the member's wallet OR their registered session key.
+    pub fn stake(ctx: Context<Stake>, round_index: u16, side: Side, amount: u64) -> Result<()> {
+        require!(amount > 0, SquawkError::InvalidAmount);
+        require!(
+            ctx.accounts.channel.status == ChannelStatus::Live,
+            SquawkError::ChannelNotLive
+        );
+        let signer = ctx.accounts.signer.key();
+        let member = &mut ctx.accounts.member;
+        require!(
+            signer == member.user || signer == member.session_key,
+            SquawkError::SessionKeyInvalid
+        );
+
+        let round = &mut ctx.accounts.round;
+        require!(round.status == RoundStatus::Staking, SquawkError::RoundNotStaking);
+        let now = Clock::get()?.unix_timestamp;
+        require!(now < round.locks_at, SquawkError::RoundLockPassed);
+        require!(member.balance >= amount, SquawkError::InsufficientBalance);
+
+        if member.position.amount > 0 {
+            require!(
+                member.position.round_index == round_index,
+                SquawkError::PositionPending
+            );
+            require!(member.position.side == side, SquawkError::OppositeSide);
+            member.position.amount = member
+                .position
+                .amount
+                .checked_add(amount)
+                .ok_or(SquawkError::Overflow)?;
+        } else {
+            member.position = Position { round_index, side, amount };
+        }
+        member.balance -= amount;
+        let pool = match side {
+            Side::Yes => &mut round.yes_pool,
+            Side::No => &mut round.no_pool,
+        };
+        *pool = pool.checked_add(amount).ok_or(SquawkError::Overflow)?;
+        Ok(())
+    }
+
+    /// Instruction 7 — lock the round at locks_at. Signerless and
+    /// permissionless so both the MagicBlock crank and any client can fire it.
+    pub fn lock_round(ctx: Context<LockRound>, _round_index: u16) -> Result<()> {
+        let round = &mut ctx.accounts.round;
+        require!(round.status == RoundStatus::Staking, SquawkError::RoundNotStaking);
+        let now = Clock::get()?.unix_timestamp;
+        require!(now >= round.locks_at, SquawkError::RoundNotLockable);
+        round.status = RoundStatus::Locked;
+        Ok(())
+    }
+
+    /// Instruction 8 — host resolves the round (host is the referee for the
+    /// MVP, disclosed in the UI). Accepts Locked, or Staking past locks_at so
+    /// a missed crank can't wedge the round. If the winning side has no
+    /// stakes, the round voids and claims refund everyone.
+    pub fn resolve_round(ctx: Context<ResolveRound>, _round_index: u16, outcome: Side) -> Result<()> {
+        require!(
+            ctx.accounts.channel.status == ChannelStatus::Live,
+            SquawkError::ChannelNotLive
+        );
+        let round = &mut ctx.accounts.round;
+        let now = Clock::get()?.unix_timestamp;
+        let lockable = round.status == RoundStatus::Staking && now >= round.locks_at;
+        require!(
+            round.status == RoundStatus::Locked || lockable,
+            SquawkError::RoundNotResolvable
+        );
+        round.snap_yes = round.yes_pool;
+        round.snap_no = round.no_pool;
+        let winning_pool = match outcome {
+            Side::Yes => round.snap_yes,
+            Side::No => round.snap_no,
+        };
+        round.status = if winning_pool == 0 {
+            RoundStatus::Voided
+        } else {
+            match outcome {
+                Side::Yes => RoundStatus::ResolvedYes,
+                Side::No => RoundStatus::ResolvedNo,
+            }
+        };
+        Ok(())
+    }
+
+    /// Claim a resolved/voided position into the member ledger. Signerless and
+    /// permissionless: winnings can only ever go to the position's own member,
+    /// so anyone (client auto-claim, host close-out loop) may fire it.
+    pub fn claim_round(ctx: Context<ClaimRound>, round_index: u16) -> Result<()> {
+        let member = &mut ctx.accounts.member;
+        require!(member.position.amount > 0, SquawkError::NothingToClaim);
+        require!(
+            member.position.round_index == round_index,
+            SquawkError::WrongRound
+        );
+
+        let round = &mut ctx.accounts.round;
+        let amount = member.position.amount;
+        let credit: u64 = match round.status {
+            RoundStatus::Voided => {
+                let pool = match member.position.side {
+                    Side::Yes => &mut round.yes_pool,
+                    Side::No => &mut round.no_pool,
+                };
+                *pool = pool.checked_sub(amount).ok_or(SquawkError::Overflow)?;
+                amount
+            }
+            RoundStatus::ResolvedYes | RoundStatus::ResolvedNo => {
+                let winner_side = if round.status == RoundStatus::ResolvedYes {
+                    Side::Yes
+                } else {
+                    Side::No
+                };
+                if member.position.side == winner_side {
+                    let (win_snap, lose_snap) = match winner_side {
+                        Side::Yes => (round.snap_yes, round.snap_no),
+                        Side::No => (round.snap_no, round.snap_yes),
+                    };
+                    let winnings = u64::try_from(
+                        (amount as u128)
+                            .checked_mul(lose_snap as u128)
+                            .ok_or(SquawkError::Overflow)?
+                            / (win_snap as u128),
+                    )
+                    .map_err(|_| SquawkError::Overflow)?;
+                    match winner_side {
+                        Side::Yes => {
+                            round.yes_pool =
+                                round.yes_pool.checked_sub(amount).ok_or(SquawkError::Overflow)?;
+                            round.no_pool =
+                                round.no_pool.checked_sub(winnings).ok_or(SquawkError::Overflow)?;
+                        }
+                        Side::No => {
+                            round.no_pool =
+                                round.no_pool.checked_sub(amount).ok_or(SquawkError::Overflow)?;
+                            round.yes_pool =
+                                round.yes_pool.checked_sub(winnings).ok_or(SquawkError::Overflow)?;
+                        }
+                    }
+                    amount.checked_add(winnings).ok_or(SquawkError::Overflow)?
+                } else {
+                    0 // loser: stake stays in the losing pool for winners' claims
+                }
+            }
+            _ => return err!(SquawkError::RoundNotResolved),
+        };
+
+        member.balance = member
+            .balance
+            .checked_add(credit)
+            .ok_or(SquawkError::Overflow)?;
+        member.position.amount = 0;
+        Ok(())
+    }
+
+    /// Schedules a one-shot MagicBlock crank (ER) that fires lock_round at
+    /// the round's locks_at. lock_round stays permissionless, so a client can
+    /// always lock as fallback if the crank misses (docs/plan.md §5.2 item 7).
+    pub fn schedule_lock_crank(
+        ctx: Context<ScheduleLockCrank>,
+        round_index: u16,
+        task_id: i64,
+        delay_millis: i64,
+    ) -> Result<()> {
+        use anchor_lang::solana_program::instruction::{AccountMeta, Instruction};
+        use anchor_lang::solana_program::program::invoke;
+        use magicblock_magic_program_api::{
+            args::ScheduleTaskArgs, instruction::MagicBlockInstruction,
+        };
+
+        let crank_ix = Instruction {
+            program_id: crate::ID,
+            accounts: vec![
+                AccountMeta::new_readonly(ctx.accounts.channel.key(), false),
+                AccountMeta::new(ctx.accounts.round.key(), false),
+            ],
+            data: anchor_lang::InstructionData::data(&crate::instruction::LockRound {
+                _round_index: round_index,
+            }),
+        };
+        let ix_data = bincode::serialize(&MagicBlockInstruction::ScheduleTask(ScheduleTaskArgs {
+            task_id,
+            execution_interval_millis: delay_millis,
+            iterations: 1,
+            instructions: vec![crank_ix],
+        }))
+        .map_err(|_| ProgramError::InvalidArgument)?;
+
+        let schedule_ix = Instruction::new_with_bytes(
+            ctx.accounts.magic_program.key(),
+            &ix_data,
+            vec![
+                AccountMeta::new(ctx.accounts.payer.key(), true),
+                AccountMeta::new_readonly(ctx.accounts.channel.key(), false),
+                AccountMeta::new(ctx.accounts.round.key(), false),
+            ],
+        );
+        invoke(
+            &schedule_ix,
+            &[
+                ctx.accounts.payer.to_account_info(),
+                ctx.accounts.channel.to_account_info(),
+                ctx.accounts.round.to_account_info(),
+                ctx.accounts.magic_program.to_account_info(),
+            ],
+        )?;
+        Ok(())
+    }
+
     /// Host extends the channel end time. Runs on the base layer before
     /// delegation and on the ER while delegated — which makes it the Phase 2
     /// proof op: after delegation it must fail on base and succeed on the ER.
@@ -182,6 +478,23 @@ pub mod squawk {
             ctx.accounts.magic_program.to_account_info(),
         )
         .commit_and_undelegate(&to_commit)
+        .build_and_invoke()?;
+        Ok(())
+    }
+
+    /// Commit + undelegate a batch of delegated accounts (ER) without any
+    /// state change — used to release Round PDAs after close_channel so the
+    /// settlement bundle stays small. Permissionless: committing program
+    /// state back to base is always safe.
+    pub fn commit_rounds<'info>(
+        ctx: Context<'_, '_, 'info, 'info, CommitRounds<'info>>,
+    ) -> Result<()> {
+        MagicIntentBundleBuilder::new(
+            ctx.accounts.payer.to_account_info(),
+            ctx.accounts.magic_context.to_account_info(),
+            ctx.accounts.magic_program.to_account_info(),
+        )
+        .commit_and_undelegate(&ctx.remaining_accounts.to_vec())
         .build_and_invoke()?;
         Ok(())
     }
@@ -343,6 +656,163 @@ pub struct DelegateMember<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(_channel_id: u64, round_index: u16)]
+pub struct CreateRound<'info> {
+    #[account(mut)]
+    pub host: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"channel", channel.channel_id.to_le_bytes().as_ref()],
+        bump = channel.bump,
+        has_one = host @ SquawkError::Unauthorized
+    )]
+    pub channel: Account<'info, Channel>,
+    #[account(
+        init,
+        payer = host,
+        space = 8 + Round::INIT_SPACE,
+        seeds = [b"round", channel.key().as_ref(), round_index.to_le_bytes().as_ref()],
+        bump
+    )]
+    pub round: Account<'info, Round>,
+    pub system_program: Program<'info, System>,
+}
+
+#[delegate]
+#[derive(Accounts)]
+#[instruction(channel_id: u64, round_index: u16)]
+pub struct DelegateRound<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    /// CHECK: PDA verified by seeds; handler checks host + Live from raw data
+    #[account(seeds = [b"channel", channel_id.to_le_bytes().as_ref()], bump)]
+    pub channel: AccountInfo<'info>,
+    /// CHECK: PDA verified by seeds; delegated via CPI
+    #[account(mut, del, seeds = [b"round", channel.key().as_ref(), round_index.to_le_bytes().as_ref()], bump)]
+    pub round: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(round_index: u16)]
+pub struct OpenRound<'info> {
+    pub host: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"channel", channel.channel_id.to_le_bytes().as_ref()],
+        bump = channel.bump,
+        has_one = host @ SquawkError::Unauthorized
+    )]
+    pub channel: Account<'info, Channel>,
+    #[account(
+        mut,
+        seeds = [b"round", channel.key().as_ref(), round_index.to_le_bytes().as_ref()],
+        bump = round.bump
+    )]
+    pub round: Account<'info, Round>,
+}
+
+#[derive(Accounts)]
+#[instruction(round_index: u16)]
+pub struct Stake<'info> {
+    /// Member wallet OR registered session key (checked in the handler).
+    pub signer: Signer<'info>,
+    #[account(
+        seeds = [b"channel", channel.channel_id.to_le_bytes().as_ref()],
+        bump = channel.bump
+    )]
+    pub channel: Account<'info, Channel>,
+    #[account(
+        mut,
+        seeds = [b"round", channel.key().as_ref(), round_index.to_le_bytes().as_ref()],
+        bump = round.bump
+    )]
+    pub round: Account<'info, Round>,
+    #[account(
+        mut,
+        seeds = [b"member", channel.key().as_ref(), member.user.as_ref()],
+        bump = member.bump
+    )]
+    pub member: Account<'info, Member>,
+}
+
+#[derive(Accounts)]
+#[instruction(round_index: u16)]
+pub struct LockRound<'info> {
+    #[account(
+        seeds = [b"channel", channel.channel_id.to_le_bytes().as_ref()],
+        bump = channel.bump
+    )]
+    pub channel: Account<'info, Channel>,
+    #[account(
+        mut,
+        seeds = [b"round", channel.key().as_ref(), round_index.to_le_bytes().as_ref()],
+        bump = round.bump
+    )]
+    pub round: Account<'info, Round>,
+}
+
+#[derive(Accounts)]
+#[instruction(round_index: u16)]
+pub struct ResolveRound<'info> {
+    pub host: Signer<'info>,
+    #[account(
+        seeds = [b"channel", channel.channel_id.to_le_bytes().as_ref()],
+        bump = channel.bump,
+        has_one = host @ SquawkError::Unauthorized
+    )]
+    pub channel: Account<'info, Channel>,
+    #[account(
+        mut,
+        seeds = [b"round", channel.key().as_ref(), round_index.to_le_bytes().as_ref()],
+        bump = round.bump
+    )]
+    pub round: Account<'info, Round>,
+}
+
+#[derive(Accounts)]
+#[instruction(round_index: u16)]
+pub struct ClaimRound<'info> {
+    #[account(
+        seeds = [b"channel", channel.channel_id.to_le_bytes().as_ref()],
+        bump = channel.bump
+    )]
+    pub channel: Account<'info, Channel>,
+    #[account(
+        mut,
+        seeds = [b"round", channel.key().as_ref(), round_index.to_le_bytes().as_ref()],
+        bump = round.bump
+    )]
+    pub round: Account<'info, Round>,
+    #[account(
+        mut,
+        seeds = [b"member", channel.key().as_ref(), member.user.as_ref()],
+        bump = member.bump
+    )]
+    pub member: Account<'info, Member>,
+}
+
+#[derive(Accounts)]
+#[instruction(round_index: u16)]
+pub struct ScheduleLockCrank<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        seeds = [b"channel", channel.channel_id.to_le_bytes().as_ref()],
+        bump = channel.bump
+    )]
+    pub channel: Account<'info, Channel>,
+    #[account(
+        mut,
+        seeds = [b"round", channel.key().as_ref(), round_index.to_le_bytes().as_ref()],
+        bump = round.bump
+    )]
+    pub round: Account<'info, Round>,
+    /// CHECK: the MagicBlock magic program
+    #[account(address = ephemeral_rollups_sdk::consts::MAGIC_PROGRAM_ID)]
+    pub magic_program: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
 pub struct ExtendChannel<'info> {
     pub host: Signer<'info>,
     #[account(
@@ -366,6 +836,13 @@ pub struct CloseChannel<'info> {
         has_one = host @ SquawkError::Unauthorized
     )]
     pub channel: Account<'info, Channel>,
+}
+
+#[commit]
+#[derive(Accounts)]
+pub struct CommitRounds<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
 }
 
 #[derive(Accounts)]

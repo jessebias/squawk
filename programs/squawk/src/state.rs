@@ -18,6 +18,8 @@ pub enum ChannelStatus {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
 pub enum RoundStatus {
+    /// Pre-created at/before go_live, not yet opened by the host.
+    Pending,
     Staking,
     Locked,
     ResolvedYes,
@@ -67,26 +69,32 @@ pub struct Round {
     pub round_index: u16,
     pub question: [u8; MAX_QUESTION_LEN],
     pub status: RoundStatus,
+    /// Live pools: stakes flow in during Staking, claims deduct after resolve.
+    /// Whatever remains after all claims is unclaimed/dust and stays accounted.
     pub yes_pool: u64,
     pub no_pool: u64,
+    /// Pool snapshots taken at resolve time — payout ratios use these so
+    /// claim order can't change anyone's share.
+    pub snap_yes: u64,
+    pub snap_no: u64,
     pub opens_at: i64,
     pub locks_at: i64,
     pub resolves_by: i64,
     pub bump: u8,
 }
 
-/// One position per user per round — seeds `["position", round_key, user]`.
-/// Delegated while Live. A second stake on the same side adds to `amount`;
-/// staking the opposite side is rejected.
-#[account]
-#[derive(InitSpace)]
+/// The member's single open position, embedded in `Member` (deviation from
+/// docs/plan.md §5.1 standalone PDAs — see docs/decisions.md Phase 3): rounds
+/// are sequential, so one open position per member suffices and no accounts
+/// ever need creating on the ER. `amount == 0` means no open position. A
+/// second stake on the same side adds to `amount`; the opposite side is
+/// rejected; staking a new round requires claiming the old position first
+/// (clients auto-claim on resolution).
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
 pub struct Position {
-    pub round: Pubkey,
-    pub user: Pubkey,
+    pub round_index: u16,
     pub side: Side,
     pub amount: u64,
-    pub claimed: bool,
-    pub bump: u8,
 }
 
 /// Per-user channel ledger — seeds `["member", channel_key, user]`.
@@ -102,5 +110,7 @@ pub struct Member {
     pub balance: u64,
     /// Session key allowed to sign stake/claim_round for this member.
     pub session_key: Pubkey,
+    /// The single open position (amount == 0 → none).
+    pub position: Position,
     pub bump: u8,
 }

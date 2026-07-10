@@ -23,3 +23,5 @@ anchor-debug = []
 anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
 anchor-spl = "0.32.1"
 ephemeral-rollups-sdk = { version = "0.14.4", features = ["anchor-compat"] }
+magicblock-magic-program-api = { version = "0.10.1", default-features = false }
+bincode = "^1.3"

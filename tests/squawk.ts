@@ -416,4 +416,256 @@ describe("squawk — phase 1: config, channel, join, withdraw", () => {
       );
     });
   });
+
+  describe("round engine (channel 3 — no delegation needed on localnet)", () => {
+    const ID3 = new anchor.BN(3);
+    const [channel3] = PublicKey.findProgramAddressSync(
+      [Buffer.from("channel"), ID3.toArrayLike(Buffer, "le", 8)],
+      program.programId
+    );
+    const member3 = (user: PublicKey) =>
+      PublicKey.findProgramAddressSync(
+        [Buffer.from("member"), channel3.toBuffer(), user.toBuffer()],
+        program.programId
+      )[0];
+    const roundPda = (i: number) => {
+      const b = Buffer.alloc(2);
+      b.writeUInt16LE(i);
+      return PublicKey.findProgramAddressSync(
+        [Buffer.from("round"), channel3.toBuffer(), b],
+        program.programId
+      )[0];
+    };
+    const sessionSigner = Keypair.generate();
+    let vault3: PublicKey;
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    const stakeAs = (
+      signer: Keypair | null,
+      roundIndex: number,
+      side: object,
+      amount: anchor.BN,
+      member: PublicKey
+    ) => {
+      const builder = program.methods
+        .stake(roundIndex, side as never, amount)
+        .accountsPartial({
+          signer: signer ? signer.publicKey : payer.publicKey,
+          channel: channel3,
+          round: roundPda(roundIndex),
+          member,
+        });
+      return signer ? builder.signers([signer]).rpc() : builder.rpc();
+    };
+
+    const conservation = async () => {
+      const ch = await program.account.channel.fetch(channel3);
+      const members = (await program.account.member.all()).filter((m) =>
+        m.account.channel.equals(channel3)
+      );
+      const balances = members.reduce((s, m) => s + m.account.balance.toNumber(), 0);
+      let pools = 0;
+      for (let i = 0; i < ch.roundCount; i++) {
+        const r = await program.account.round.fetch(roundPda(i));
+        pools += r.yesPool.toNumber() + r.noPool.toNumber();
+      }
+      expect(balances + pools).to.equal(ch.totalPool.toNumber());
+      expect(Number((await getAccount(provider.connection, vault3)).amount)).to.equal(
+        ch.totalPool.toNumber()
+      );
+    };
+
+    before(async () => {
+      vault3 = getAssociatedTokenAddressSync(usdcMint, channel3, true);
+      const endsAt = new anchor.BN(Math.floor(Date.now() / 1000) + 3600);
+      await program.methods
+        .createChannel(ID3, "Round Engine", endsAt)
+        .accountsPartial({
+          host: payer.publicKey,
+          config: configPda,
+          usdcMint,
+          channel: channel3,
+          vault: vault3,
+        })
+        .rpc();
+      // user1 registers a real session keypair; user2 uses their own wallet
+      await program.methods
+        .joinChannel(USDC(100), sessionSigner.publicKey)
+        .accountsPartial({
+          user: payer.publicKey,
+          config: configPda,
+          usdcMint,
+          channel: channel3,
+          member: member3(payer.publicKey),
+          userTokenAccount: user1Ata,
+          vault: vault3,
+        })
+        .rpc();
+      await program.methods
+        .joinChannel(USDC(50), user2.publicKey)
+        .accountsPartial({
+          user: user2.publicKey,
+          config: configPda,
+          usdcMint,
+          channel: channel3,
+          member: member3(user2.publicKey),
+          userTokenAccount: user2Ata,
+          vault: vault3,
+        })
+        .signers([user2])
+        .rpc();
+    });
+
+    it("pre-creates rounds sequentially while Open", async () => {
+      for (let i = 0; i < 3; i++) {
+        await program.methods
+          .createRound(ID3, i)
+          .accountsPartial({ host: payer.publicKey, channel: channel3, round: roundPda(i) })
+          .rpc();
+      }
+      const ch = await program.account.channel.fetch(channel3);
+      expect(ch.roundCount).to.equal(3);
+
+      await expectAnchorError(
+        program.methods
+          .createRound(ID3, 5)
+          .accountsPartial({ host: payer.publicKey, channel: channel3, round: roundPda(5) })
+          .rpc(),
+        "RoundOutOfOrder"
+      );
+    });
+
+    it("runs a full round: open → stakes → lock → resolve → claims", async () => {
+      await program.methods
+        .goLive()
+        .accountsPartial({ host: payer.publicKey, channel: channel3 })
+        .rpc();
+
+      const locksAt = new anchor.BN(Math.floor(Date.now() / 1000) + 8);
+      const resolvesBy = locksAt.addn(60);
+      await program.methods
+        .openRound(0, "Will it work?", locksAt, resolvesBy)
+        .accountsPartial({ host: payer.publicKey, channel: channel3, round: roundPda(0) })
+        .rpc();
+      const ch = await program.account.channel.fetch(channel3);
+      expect(ch.activeRound).to.equal(0);
+
+      // user1 stakes YES 30 via SESSION KEY, then adds 10 more
+      await stakeAs(sessionSigner, 0, { yes: {} }, USDC(30), member3(payer.publicKey));
+      await stakeAs(sessionSigner, 0, { yes: {} }, USDC(10), member3(payer.publicKey));
+      // opposite side rejected
+      await expectAnchorError(
+        stakeAs(sessionSigner, 0, { no: {} }, USDC(5), member3(payer.publicKey)),
+        "OppositeSide"
+      );
+      // user2 stakes NO 20 with their own wallet
+      await stakeAs(user2, 0, { no: {} }, USDC(20), member3(user2.publicKey));
+      // overdraw rejected
+      await expectAnchorError(
+        stakeAs(user2, 0, { no: {} }, USDC(100), member3(user2.publicKey)),
+        "InsufficientBalance"
+      );
+      // stranger signer rejected
+      await expectAnchorError(
+        stakeAs(Keypair.generate(), 0, { yes: {} }, USDC(1), member3(user2.publicKey)),
+        "SessionKeyInvalid"
+      );
+
+      const round = await program.account.round.fetch(roundPda(0));
+      expect(round.yesPool.toNumber()).to.equal(40_000_000);
+      expect(round.noPool.toNumber()).to.equal(20_000_000);
+      await conservation();
+
+      // locking early is rejected; after locks_at it's permissionless+signerless
+      await expectAnchorError(
+        program.methods
+          .lockRound(0)
+          .accountsPartial({ channel: channel3, round: roundPda(0) })
+          .rpc(),
+        "RoundNotLockable"
+      );
+      await sleep(9000);
+      await program.methods
+        .lockRound(0)
+        .accountsPartial({ channel: channel3, round: roundPda(0) })
+        .rpc();
+      await expectAnchorError(
+        stakeAs(user2, 0, { no: {} }, USDC(1), member3(user2.publicKey)),
+        "RoundNotStaking"
+      );
+
+      // host resolves YES; snapshots taken
+      await program.methods
+        .resolveRound(0, { yes: {} })
+        .accountsPartial({ host: payer.publicKey, channel: channel3, round: roundPda(0) })
+        .rpc();
+      const resolved = await program.account.round.fetch(roundPda(0));
+      expect(resolved.status).to.deep.equal({ resolvedYes: {} });
+      expect(resolved.snapYes.toNumber()).to.equal(40_000_000);
+
+      // claims are permissionless: winner gets stake + pro-rata losing pool
+      await program.methods
+        .claimRound(0)
+        .accountsPartial({ channel: channel3, round: roundPda(0), member: member3(payer.publicKey) })
+        .rpc();
+      const m1 = await program.account.member.fetch(member3(payer.publicKey));
+      // 100 - 40 staked + (40 + 40*20/40 = 60) = 120
+      expect(m1.balance.toNumber()).to.equal(120_000_000);
+      expect(m1.position.amount.toNumber()).to.equal(0);
+
+      await program.methods
+        .claimRound(0)
+        .accountsPartial({ channel: channel3, round: roundPda(0), member: member3(user2.publicKey) })
+        .rpc();
+      const m2 = await program.account.member.fetch(member3(user2.publicKey));
+      expect(m2.balance.toNumber()).to.equal(30_000_000); // loser: stake gone
+
+      const drained = await program.account.round.fetch(roundPda(0));
+      expect(drained.yesPool.toNumber()).to.equal(0);
+      expect(drained.noPool.toNumber()).to.equal(0);
+      await conservation();
+
+      await expectAnchorError(
+        program.methods
+          .claimRound(0)
+          .accountsPartial({ channel: channel3, round: roundPda(0), member: member3(payer.publicKey) })
+          .rpc(),
+        "NothingToClaim"
+      );
+    });
+
+    it("voids a round whose winning side is empty and refunds via claim", async () => {
+      const locksAt = new anchor.BN(Math.floor(Date.now() / 1000) + 6);
+      await program.methods
+        .openRound(1, "Anyone home?", locksAt, locksAt.addn(60))
+        .accountsPartial({ host: payer.publicKey, channel: channel3, round: roundPda(1) })
+        .rpc();
+      await stakeAs(user2, 1, { no: {} }, USDC(10), member3(user2.publicKey));
+      await sleep(7000);
+
+      // resolve straight from Staking past locks_at (missed-crank fallback path)
+      await program.methods
+        .resolveRound(1, { yes: {} })
+        .accountsPartial({ host: payer.publicKey, channel: channel3, round: roundPda(1) })
+        .rpc();
+      const r = await program.account.round.fetch(roundPda(1));
+      expect(r.status).to.deep.equal({ voided: {} });
+
+      await program.methods
+        .claimRound(1)
+        .accountsPartial({ channel: channel3, round: roundPda(1), member: member3(user2.publicKey) })
+        .rpc();
+      const m2 = await program.account.member.fetch(member3(user2.publicKey));
+      expect(m2.balance.toNumber()).to.equal(30_000_000); // refunded
+      await conservation();
+    });
+
+    it("rejects staking a Pending round", async () => {
+      await expectAnchorError(
+        stakeAs(user2, 2, { yes: {} }, USDC(1), member3(user2.publicKey)),
+        "RoundNotStaking"
+      );
+    });
+  });
+
 });

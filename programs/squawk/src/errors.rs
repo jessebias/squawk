@@ -22,4 +22,32 @@ pub enum SquawkError {
     Unauthorized,
     #[msg("Channel is not live")]
     ChannelNotLive,
+    #[msg("Signer is neither the member nor their session key")]
+    SessionKeyInvalid,
+    #[msg("Rounds must be created in order")]
+    RoundOutOfOrder,
+    #[msg("Round is not pending")]
+    RoundNotPending,
+    #[msg("Round is not open for staking")]
+    RoundNotStaking,
+    #[msg("Round is already past its lock time")]
+    RoundLockPassed,
+    #[msg("Round lock time has not been reached")]
+    RoundNotLockable,
+    #[msg("Round is not resolvable yet")]
+    RoundNotResolvable,
+    #[msg("Round is not resolved")]
+    RoundNotResolved,
+    #[msg("Invalid round timing")]
+    InvalidRoundTiming,
+    #[msg("Insufficient ledger balance")]
+    InsufficientBalance,
+    #[msg("Position is on the opposite side")]
+    OppositeSide,
+    #[msg("Previous position must be claimed first")]
+    PositionPending,
+    #[msg("No open position to claim")]
+    NothingToClaim,
+    #[msg("Position belongs to a different round")]
+    WrongRound,
 }

@@ -4068,7 +4068,9 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
+ "bincode",
  "ephemeral-rollups-sdk",
+ "magicblock-magic-program-api",
 ]
 
 [[package]]
