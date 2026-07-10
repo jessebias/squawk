@@ -1,7 +1,9 @@
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
-use ephemeral_rollups_sdk::anchor::ephemeral;
+use ephemeral_rollups_sdk::anchor::{commit, delegate, ephemeral};
+use ephemeral_rollups_sdk::cpi::DelegateConfig;
+use ephemeral_rollups_sdk::ephem::MagicIntentBundleBuilder;
 
 pub mod errors;
 pub mod state;
@@ -92,6 +94,95 @@ pub mod squawk {
             .user_count
             .checked_add(1)
             .ok_or(SquawkError::Overflow)?;
+        Ok(())
+    }
+
+    /// Instruction 4a (docs/plan.md §5.2) — host flips the channel Live.
+    /// Delegation of the channel/member accounts follows as separate
+    /// instructions (delegate_channel / delegate_member), composed by the
+    /// client, since each delegation is its own CPI.
+    pub fn go_live(ctx: Context<GoLive>) -> Result<()> {
+        require!(
+            ctx.accounts.channel.status == ChannelStatus::Open,
+            SquawkError::ChannelNotOpen
+        );
+        ctx.accounts.channel.status = ChannelStatus::Live;
+        Ok(())
+    }
+
+    /// Instruction 4b — delegate the Channel PDA to the ER. Host-only, Live only.
+    pub fn delegate_channel(ctx: Context<DelegateChannel>, channel_id: u64) -> Result<()> {
+        {
+            let data = ctx.accounts.channel.try_borrow_data()?;
+            let ch = Channel::try_deserialize(&mut data.as_ref())?;
+            require!(ch.status == ChannelStatus::Live, SquawkError::ChannelNotLive);
+            require_keys_eq!(ctx.accounts.payer.key(), ch.host, SquawkError::Unauthorized);
+        }
+        let id_bytes = channel_id.to_le_bytes();
+        ctx.accounts.delegate_channel(
+            &ctx.accounts.payer,
+            &[b"channel", id_bytes.as_ref()],
+            DelegateConfig::default(),
+        )?;
+        Ok(())
+    }
+
+    /// Instruction 4c — delegate one Member PDA to the ER. Host-only, Live only.
+    /// (The channel account may itself already be delegated; only its data is
+    /// read here, which survives delegation.)
+    pub fn delegate_member(ctx: Context<DelegateMember>, _channel_id: u64, user: Pubkey) -> Result<()> {
+        {
+            let data = ctx.accounts.channel.try_borrow_data()?;
+            let ch = Channel::try_deserialize(&mut data.as_ref())?;
+            require!(ch.status == ChannelStatus::Live, SquawkError::ChannelNotLive);
+            require_keys_eq!(ctx.accounts.payer.key(), ch.host, SquawkError::Unauthorized);
+        }
+        let channel_key = ctx.accounts.channel.key();
+        ctx.accounts.delegate_member(
+            &ctx.accounts.payer,
+            &[b"member", channel_key.as_ref(), user.as_ref()],
+            DelegateConfig::default(),
+        )?;
+        Ok(())
+    }
+
+    /// Host extends the channel end time. Runs on the base layer before
+    /// delegation and on the ER while delegated — which makes it the Phase 2
+    /// proof op: after delegation it must fail on base and succeed on the ER.
+    pub fn extend_channel(ctx: Context<ExtendChannel>, new_ends_at: i64) -> Result<()> {
+        require!(
+            new_ends_at > ctx.accounts.channel.ends_at,
+            SquawkError::InvalidEndsAt
+        );
+        ctx.accounts.channel.ends_at = new_ends_at;
+        Ok(())
+    }
+
+    /// Instruction 9 — host closes the channel ON THE ER: marks it Closed and
+    /// schedules commit + undelegation of the channel plus every delegated
+    /// account passed in remaining_accounts (members; rounds in Phase 3).
+    /// Base layer only ever sees status Closed after the commit lands, so
+    /// withdraw's Closed gate is inherently safe (Settling state not needed).
+    pub fn close_channel<'info>(
+        ctx: Context<'_, '_, 'info, 'info, CloseChannel<'info>>,
+    ) -> Result<()> {
+        require!(
+            ctx.accounts.channel.status == ChannelStatus::Live,
+            SquawkError::ChannelNotLive
+        );
+        ctx.accounts.channel.status = ChannelStatus::Closed;
+        // Serialize before the commit CPI snapshots account data.
+        ctx.accounts.channel.exit(&crate::ID)?;
+
+        let mut to_commit = vec![ctx.accounts.channel.to_account_info()];
+        to_commit.extend(ctx.remaining_accounts.iter().cloned());
+        MagicIntentBundleBuilder::new(
+            ctx.accounts.host.to_account_info(),
+            ctx.accounts.magic_context.to_account_info(),
+            ctx.accounts.magic_program.to_account_info(),
+        )
+        .commit_and_undelegate(&to_commit)
+        .build_and_invoke()?;
         Ok(())
     }
 
@@ -212,6 +303,69 @@ pub struct JoinChannel<'info> {
     pub vault: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct GoLive<'info> {
+    pub host: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"channel", channel.channel_id.to_le_bytes().as_ref()],
+        bump = channel.bump,
+        has_one = host @ SquawkError::Unauthorized
+    )]
+    pub channel: Account<'info, Channel>,
+}
+
+#[delegate]
+#[derive(Accounts)]
+#[instruction(channel_id: u64)]
+pub struct DelegateChannel<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    /// CHECK: PDA verified by seeds; handler checks host + Live from raw data
+    #[account(mut, del, seeds = [b"channel", channel_id.to_le_bytes().as_ref()], bump)]
+    pub channel: AccountInfo<'info>,
+}
+
+#[delegate]
+#[derive(Accounts)]
+#[instruction(channel_id: u64, user: Pubkey)]
+pub struct DelegateMember<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    /// CHECK: PDA verified by seeds; handler checks host + Live from raw data
+    #[account(seeds = [b"channel", channel_id.to_le_bytes().as_ref()], bump)]
+    pub channel: AccountInfo<'info>,
+    /// CHECK: PDA verified by seeds; delegated via CPI
+    #[account(mut, del, seeds = [b"member", channel.key().as_ref(), user.as_ref()], bump)]
+    pub member: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ExtendChannel<'info> {
+    pub host: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"channel", channel.channel_id.to_le_bytes().as_ref()],
+        bump = channel.bump,
+        has_one = host @ SquawkError::Unauthorized
+    )]
+    pub channel: Account<'info, Channel>,
+}
+
+#[commit]
+#[derive(Accounts)]
+pub struct CloseChannel<'info> {
+    #[account(mut)]
+    pub host: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"channel", channel.channel_id.to_le_bytes().as_ref()],
+        bump = channel.bump,
+        has_one = host @ SquawkError::Unauthorized
+    )]
+    pub channel: Account<'info, Channel>,
 }
 
 #[derive(Accounts)]

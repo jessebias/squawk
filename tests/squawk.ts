@@ -294,4 +294,126 @@ describe("squawk — phase 1: config, channel, join, withdraw", () => {
       "NothingToWithdraw"
     );
   });
+
+  describe("go_live / live-channel gates (channel 2)", () => {
+    const ID2 = new anchor.BN(2);
+    const [channel2] = PublicKey.findProgramAddressSync(
+      [Buffer.from("channel"), ID2.toArrayLike(Buffer, "le", 8)],
+      program.programId
+    );
+    const member2 = (user: PublicKey) =>
+      PublicKey.findProgramAddressSync(
+        [Buffer.from("member"), channel2.toBuffer(), user.toBuffer()],
+        program.programId
+      )[0];
+    let vault2: PublicKey;
+    let endsAt: anchor.BN;
+
+    before(async () => {
+      vault2 = getAssociatedTokenAddressSync(usdcMint, channel2, true);
+      endsAt = new anchor.BN(Math.floor(Date.now() / 1000) + 3600);
+      await program.methods
+        .createChannel(ID2, "Live Channel", endsAt)
+        .accountsPartial({
+          host: payer.publicKey,
+          config: configPda,
+          usdcMint,
+          channel: channel2,
+          vault: vault2,
+        })
+        .rpc();
+      await program.methods
+        .joinChannel(USDC(10), sessionKey1)
+        .accountsPartial({
+          user: payer.publicKey,
+          config: configPda,
+          usdcMint,
+          channel: channel2,
+          member: member2(payer.publicKey),
+          userTokenAccount: user1Ata,
+          vault: vault2,
+        })
+        .rpc();
+    });
+
+    it("extend_channel works pre-live and rejects non-host", async () => {
+      endsAt = endsAt.addn(600);
+      await program.methods
+        .extendChannel(endsAt)
+        .accountsPartial({ host: payer.publicKey, channel: channel2 })
+        .rpc();
+      const ch = await program.account.channel.fetch(channel2);
+      expect(ch.endsAt.toNumber()).to.equal(endsAt.toNumber());
+
+      await expectAnchorError(
+        program.methods
+          .extendChannel(endsAt.addn(600))
+          .accountsPartial({ host: user2.publicKey, channel: channel2 })
+          .signers([user2])
+          .rpc(),
+        "Unauthorized"
+      );
+    });
+
+    it("go_live flips Open → Live and rejects non-host / double call", async () => {
+      await expectAnchorError(
+        program.methods
+          .goLive()
+          .accountsPartial({ host: user2.publicKey, channel: channel2 })
+          .signers([user2])
+          .rpc(),
+        "Unauthorized"
+      );
+
+      await program.methods
+        .goLive()
+        .accountsPartial({ host: payer.publicKey, channel: channel2 })
+        .rpc();
+      const ch = await program.account.channel.fetch(channel2);
+      expect(ch.status).to.deep.equal({ live: {} });
+
+      await expectAnchorError(
+        program.methods
+          .goLive()
+          .accountsPartial({ host: payer.publicKey, channel: channel2 })
+          .rpc(),
+        "ChannelNotOpen"
+      );
+    });
+
+    it("rejects join and withdraw while Live", async () => {
+      await expectAnchorError(
+        program.methods
+          .joinChannel(USDC(5), sessionKey2)
+          .accountsPartial({
+            user: user2.publicKey,
+            config: configPda,
+            usdcMint,
+            channel: channel2,
+            member: member2(user2.publicKey),
+            userTokenAccount: user2Ata,
+            vault: vault2,
+          })
+          .signers([user2])
+          .rpc(),
+        "ChannelNotOpen"
+      );
+
+      await expectAnchorError(
+        program.methods
+          .withdraw()
+          .accountsPartial({
+            user: payer.publicKey,
+            config: configPda,
+            usdcMint,
+            channel: channel2,
+            member: member2(payer.publicKey),
+            userTokenAccount: user1Ata,
+            vault: vault2,
+          })
+          .rpc(),
+        "WithdrawLocked"
+      );
+    });
+  });
 });

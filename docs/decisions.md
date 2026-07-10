@@ -45,9 +45,36 @@ Newest at the bottom. Format: date · decision · why.
 - `Channel.total_pool` = sum of deposits currently in the vault; conservation test asserts
   `vault.amount == total_pool == Σ member balances` (extends to round pools in Phase 3).
 
-## Open questions (resolve in Phase 2)
+## 2026-07-11 — Phase 2 (delegation lifecycle, accepted on devnet)
 
-- Magic Router single connection vs dual base+ER connections (docs/plan.md §3/§7.4).
-- ER clock semantics for `locks_at`/`resolves_by` — verify against docs, add tolerance.
-- Official Session Keys SDK React hooks in React Native vs burner-keypair fallback (docs/plan.md §7.3).
-- Which MWA wallet app on the demo devices (Phantom / Solflare / fakewallet).
+- **Dual connections, not the Magic Router** (resolves docs/plan.md §3/§7.4). The MagicBlock
+  skill's best-practices list explicitly recommends dual connections; the router is used only for
+  `getDelegationStatus`. Endpoints: base `https://api.devnet.solana.com`, ER
+  `https://devnet-as.magicblock.app/`, router `https://devnet-router.magicblock.app/`.
+- **Lazy Position creation on the ER is confirmed viable** (resolves the §4.2/§5.2 pre-allocation
+  question). The Ephemeral Accounts doc: `#[ephemeral_accounts]` + generated
+  `init_if_needed_ephemeral_*` supports lazy creation during ER transactions at 32 lamports/byte
+  (~109× cheaper than base rent). Constraints: `AccountInfo` fields, one pre-delegated sponsor
+  account with lamports, manual serialization. Positions will be ER-native in Phase 3; whether
+  Rounds are pre-created+delegated or also ER-native is a Phase 3 decision.
+- **`Settling` status is unused.** `close_channel` runs on the ER, sets `Closed`, and bundles
+  commit+undelegate; the base layer only ever observes `Closed` after the commit lands, so the
+  withdraw gate is inherently safe without an intermediate state.
+- **Delegation is split into per-account instructions** (`delegate_channel`, `delegate_member`)
+  composed by the client after `go_live`, each host-only + Live-only (validated by manual
+  deserialization since delegate contexts use `AccountInfo`).
+- **`extend_channel` added** (host extends `ends_at`): real utility, and it doubles as the
+  lifecycle proof op — after delegation it fails on base (`AccountOwnedByWrongProgram`) and
+  succeeds on the ER.
+- **Devnet deployment record:** program `4NT1YGUK1YWboAq9pyKLqGsHUQaRwDAi7kpATd6Ynuii`, mock USDC
+  mint `BxSQ6kJ3tSwP8vkYberm2oyozxyy4RgfCfidDKdnTQPp` (held in the on-chain config), IDL account
+  `6Y57FeacYsDDsCqtphxVQPDvrnhUiuYCoYfnwGe5D262`. Proof run: 2 ER txs, 1 settlement commitment
+  (`3rDKLQ…m8wG`), verified via `scripts/phase2-lifecycle.ts`.
+
+## Open questions (resolve in Phase 3/4)
+
+- ER clock semantics for `locks_at`/`resolves_by` — verify against docs when building the round
+  engine; add tolerance (Phase 3).
+- Rounds: pre-create+delegate at `go_live` vs ER-native ephemeral accounts (Phase 3).
+- Official Session Keys SDK React hooks in React Native vs burner-keypair fallback (Phase 4).
+- Which MWA wallet app on the demo devices (Phantom / Solflare / fakewallet) (Phase 4).

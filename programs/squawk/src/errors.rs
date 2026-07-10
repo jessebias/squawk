@@ -18,4 +18,8 @@ pub enum SquawkError {
     NothingToWithdraw,
     #[msg("Arithmetic overflow")]
     Overflow,
+    #[msg("Only the channel host may do this")]
+    Unauthorized,
+    #[msg("Channel is not live")]
+    ChannelNotLive,
 }
