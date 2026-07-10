@@ -1,0 +1,25 @@
+[toolchain]
+anchor_version = "0.32.1"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+squawk = "4NT1YGUK1YWboAq9pyKLqGsHUQaRwDAi7kpATd6Ynuii"
+
+[programs.devnet]
+squawk = "4NT1YGUK1YWboAq9pyKLqGsHUQaRwDAi7kpATd6Ynuii"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/jbias.json"
+
+[scripts]
+test = "node scripts/run-tests.js"
+
+[test]
+startup_wait = 20000
