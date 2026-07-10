@@ -90,7 +90,7 @@ npx ts-node scripts/seed-demo.ts   # demo channel + funds demo wallets (SOL AND 
 ## Phase tracker (docs/plan.md §9)
 
 - [x] Phase 0 — repo bootstrap: docs, toolchain, Anchor + Expo scaffolds, MagicBlock dev skill
-- [ ] Phase 1 — program skeleton on localnet (accounts, instructions 1–3 + 10, tests)
+- [x] Phase 1 — program skeleton on localnet (accounts, instructions 1–3 + 10, tests)
 - [ ] Phase 2 — delegation integration on devnet (**highest risk — before any UI**)
 - [ ] Phase 3 — round engine in the ER (open/stake/lock/resolve/claim + crank + simulator)
 - [ ] Phase 4 — mobile app core (MWA connect, session keys, three screens, live odds)

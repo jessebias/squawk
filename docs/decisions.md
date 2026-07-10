@@ -30,6 +30,21 @@ Newest at the bottom. Format: date · decision · why.
   accounts (≈2 devnet SOL rent + multi-transaction delegation batches in `go_live`). Final call in
   Phase 2 after reading the Ephemeral Accounts doc; pre-create only Rounds + Members (~60 accounts).
 
+## 2026-07-11 — Phase 1 (program skeleton)
+
+- **`withdraw` is allowed while the channel is `Open`, not only `Closed`** (deviation from
+  docs/plan.md §5.2/§5.3). Before `go_live` nothing is delegated and `balance == deposited`, so
+  letting a user back out is safe and it gives Phase 1 its deposit→withdraw round-trip test.
+  Withdrawals remain impossible while Live/Settling (`WithdrawLocked`).
+- **Session key registered as a plain `Pubkey` arg on `join_channel`** and stored on `Member`.
+  Whether to adopt the `gpl_session` program's token/validation macros instead is a Phase 4
+  (client) decision; the stored-key check is sufficient for the ER-side `stake`/`claim` gate.
+- **`#[ephemeral]` is already on the program module** (costless now, required for Phase 2), so
+  delegation work only adds instructions, not program-shell changes.
+- `Member.deposited` is lifetime history and survives withdraw; only `balance` is zeroed.
+- `Channel.total_pool` = sum of deposits currently in the vault; conservation test asserts
+  `vault.amount == total_pool == Σ member balances` (extends to round pools in Phase 3).
+
 ## Open questions (resolve in Phase 2)
 
 - Magic Router single connection vs dual base+ER connections (docs/plan.md §3/§7.4).
