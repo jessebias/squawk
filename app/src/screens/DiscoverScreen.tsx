@@ -1,5 +1,6 @@
-// Discover — header, search, trending carousel, category tiles, then the
-// feature feed (ALOT reference): big cover cards with tag chips + countdowns.
+// Discover — header, scrolling activity ticker, search, trending carousel,
+// category tiles, then the feature feed (ALOT reference): big cover cards
+// with tag chips + countdowns.
 // Category tiles filter the feed via demoContent's title→category map.
 import React, { useMemo, useState } from "react";
 import {
@@ -23,6 +24,7 @@ import { useWallet } from "../hooks/useWallet";
 import { FeatureCard } from "../components/FeatureCard";
 import { ChannelCover } from "../components/ChannelCover";
 import { AppHeader } from "../components/AppHeader";
+import { ActivityTicker, type TickerItem } from "../components/ActivityTicker";
 import type { RootStackParamList } from "../navigators/AppNavigator";
 
 const JOIN_AMOUNT_USDC = 10;
@@ -55,6 +57,19 @@ export function DiscoverScreen() {
     [channels.data, search]
   );
   const trending = filtered.slice(0, 6);
+  const tickerItems = useMemo<TickerItem[]>(
+    () =>
+      (channels.data ?? []).map((c) => {
+        const pool = (c.totalPool.toNumber() / 1e6).toFixed(1);
+        const live = c.status === "live";
+        return {
+          text: plainTitle(c.title).toUpperCase(),
+          meta: live ? `${pool} USDC POOL` : `${pool} USDC · JOIN 10`,
+          live,
+        };
+      }),
+    [channels.data]
+  );
   const catLabel = CATEGORIES[category].label;
   const feed = useMemo(
     () =>
@@ -116,6 +131,8 @@ export function DiscoverScreen() {
   const header = (
     <View>
       <AppHeader />
+
+      <ActivityTicker items={tickerItems} style={styles.ticker} />
 
       <View style={styles.search}>
         <Feather name="search" size={15} color={colors.textMuted} />
@@ -215,6 +232,7 @@ export function DiscoverScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 16, paddingTop: 8 },
+  ticker: { marginHorizontal: -16, marginBottom: 14 },
   search: {
     flexDirection: "row",
     alignItems: "center",
