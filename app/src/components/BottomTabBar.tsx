@@ -1,4 +1,4 @@
-// Five-tab bottom nav with the raised center gradient mic — docs/plan.md §8.
+// Five-tab bottom nav with the raised center gradient create (+) button — docs/plan.md §8.
 // Active tab icon + label render through a gradient mask (ALOT reference).
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -9,7 +9,7 @@ import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { colors, gradient, hairline } from "../theme";
 
 const ICONS: Record<string, keyof typeof Feather.glyphMap> = {
-  Home: "home",
+  Home: "grid",
   Explore: "compass",
   Leaderboard: "bar-chart-2",
   Profile: "user",
@@ -70,7 +70,7 @@ export function BottomTabBar({ state, navigation }: BottomTabBarProps) {
             end={{ x: 1, y: 1 }}
             style={styles.mic}
           >
-            <Feather name="mic" size={20} color="#FFFFFF" />
+            <Feather name="plus" size={22} color="#FFFFFF" />
           </LinearGradient>
         </Pressable>
       </View>
