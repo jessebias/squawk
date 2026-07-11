@@ -87,6 +87,33 @@ export function decodeRound(raw: any): RoundAccount {
   };
 }
 
+export type LeaderboardEntry = {
+  user: PublicKey;
+  /// Lifetime staking volume: Σ deposited across all memberships, ×1000
+  /// (deposited survives withdraw, so points never regress).
+  points: number;
+  chips: number;
+  channels: number;
+};
+
+export async function fetchLeaderboard(): Promise<LeaderboardEntry[]> {
+  // dataSize filter skips pre-Phase-3 Member accounts (older, smaller layout
+  // without `position`) that would overrun the decoder.
+  const size = (programBase.account as any).member.size;
+  const members = await (programBase.account as any).member.all([{ dataSize: size }]);
+  const byUser = new Map<string, LeaderboardEntry>();
+  for (const m of members) {
+    const key = (m.account.user as PublicKey).toBase58();
+    const entry =
+      byUser.get(key) ?? { user: m.account.user, points: 0, chips: 0, channels: 0 };
+    entry.points += Math.round((m.account.deposited.toNumber() / USDC_DECIMALS) * 1000);
+    entry.chips += m.account.balance.toNumber() / USDC_DECIMALS;
+    entry.channels += 1;
+    byUser.set(key, entry);
+  }
+  return [...byUser.values()].sort((a, b) => b.points - a.points).slice(0, 50);
+}
+
 export async function fetchUsdcBalance(user: PublicKey): Promise<number> {
   try {
     const mint = await getUsdcMint();
@@ -118,6 +145,7 @@ export async function fetchMemberships(user: PublicKey): Promise<
   { channel: ChannelAccount; member: MemberAccount }[]
 > {
   const members = await (programBase.account as any).member.all([
+    { dataSize: (programBase.account as any).member.size }, // skip old-layout members
     { memcmp: { offset: 8 + 32, bytes: user.toBase58() } }, // Member.user
   ]);
   const out: { channel: ChannelAccount; member: MemberAccount }[] = [];

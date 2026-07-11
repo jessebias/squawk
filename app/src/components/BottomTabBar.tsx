@@ -11,7 +11,7 @@ import { colors, gradient, hairline } from "../theme";
 const ICONS: Record<string, keyof typeof Feather.glyphMap> = {
   Home: "home",
   Explore: "compass",
-  Activity: "bar-chart-2",
+  Leaderboard: "bar-chart-2",
   Profile: "user",
 };
 
@@ -74,7 +74,7 @@ export function BottomTabBar({ state, navigation }: BottomTabBarProps) {
           </LinearGradient>
         </Pressable>
       </View>
-      {tab("Activity", 2)}
+      {tab("Leaderboard", 2)}
       {tab("Profile", 3)}
     </View>
   );

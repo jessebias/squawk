@@ -8,6 +8,7 @@ import { colors } from "../theme";
 import { DiscoverScreen } from "../screens/DiscoverScreen";
 import { ChannelScreen } from "../screens/ChannelScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
+import { LeaderboardScreen } from "../screens/LeaderboardScreen";
 import { makePlaceholder } from "../screens/PlaceholderScreen";
 import { BottomTabBar } from "../components/BottomTabBar";
 
@@ -26,7 +27,6 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator();
 
 const ExploreScreen = makePlaceholder("Explore", "compass");
-const ActivityScreen = makePlaceholder("Activity", "bar-chart-2");
 
 const navTheme = {
   ...DarkTheme,
@@ -48,7 +48,7 @@ function Tabs() {
     >
       <Tab.Screen name="Home" component={DiscoverScreen} />
       <Tab.Screen name="Explore" component={ExploreScreen} />
-      <Tab.Screen name="Activity" component={ActivityScreen} />
+      <Tab.Screen name="Leaderboard" component={LeaderboardScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );

@@ -29,6 +29,8 @@ const CHANNELS = [
   { title: "⚽ Madrid vs Inter", deposit: 24 },
   { title: "🎮 Ranked duo stream", deposit: 17 },
   { title: "📈 SOL price next hour", deposit: 31 },
+  { title: "🏆 Hackathon finals", deposit: 140 },
+  { title: "🎬 Blitz demos", deposit: 30 },
 ];
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

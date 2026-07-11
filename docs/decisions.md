@@ -168,6 +168,12 @@ Newest at the bottom. Format: date · decision · why.
   sequentially; Recent activity rows derived from memberships (collectible/in-play/settled).
 - **Running on the Seeker** (Solana Mobile device) over USB Metro (`adb reverse`); each device
   generates its own local wallet + session key — fund via `scripts/fund-wallet.ts <address>`.
+- **Leaderboard tab replaces the Activity placeholder** ("Top Squawkers"): ranks all wallets by
+  lifetime staking volume — points = Σ `Member.deposited` × 1000 across memberships (`deposited`
+  survives withdraw, so points never regress); deterministic emoji avatars from the pubkey;
+  caller's row highlighted; search filters by address. **Gotcha: `member.all()` must carry a
+  `dataSize` filter** — Member accounts created by pre-Phase-3 deploys have the old (smaller,
+  no-`position`) layout and overrun the decoder ("Trying to access beyond buffer length").
 
 ## Open questions (Phase 5)
 
