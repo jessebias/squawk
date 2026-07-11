@@ -14,8 +14,10 @@
   "dependencies": {
     "@coral-xyz/anchor": "0.32.1",
     "@expo-google-fonts/bungee": "^0.4.1",
+    "@expo/vector-icons": "~14.0.4",
     "@magicblock-labs/ephemeral-rollups-sdk": "0.14.3",
     "@react-native-async-storage/async-storage": "1.23.1",
+    "@react-native-masked-view/masked-view": "0.3.2",
     "@react-navigation/bottom-tabs": "^6.5.16",
     "@react-navigation/native": "^6.1.14",
     "@react-navigation/native-stack": "^6.9.22",
@@ -31,6 +33,7 @@
     "expo-dev-client": "~5.0.19",
     "expo-font": "~13.0.4",
     "expo-haptics": "~14.0.1",
+    "expo-linear-gradient": "~14.0.2",
     "expo-secure-store": "~14.0.1",
     "expo-status-bar": "~2.0.1",
     "expo-system-ui": "~4.0.9",
@@ -38,7 +41,8 @@
     "react-native": "0.76.9",
     "react-native-paper": "^5.12.3",
     "react-native-safe-area-context": "4.12.0",
-    "react-native-screens": "~4.4.0"
+    "react-native-screens": "~4.4.0",
+    "react-native-svg": "15.8.0"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",

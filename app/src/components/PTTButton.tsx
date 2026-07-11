@@ -1,10 +1,12 @@
-// Push-to-talk staking — docs/plan.md §7.2. Hold: the stake accumulates
-// (0 → 2.00 USDC, +0.03/50ms) with haptic ticks every 0.25; release locks it
-// in on the selected side via the session key (zero popups, zero fees).
+// Push-to-talk staking — docs/plan.md §7.2, styled per the approved mockup:
+// orange circle with mic + HOLD (Bungee) + live amount; the button grows as
+// the stake accumulates (scale 1 + amount·0.05). Haptic ticks every 0.25.
 import React, { useRef, useState } from "react";
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { Feather } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
-import { colors } from "../theme";
+import { colors, fonts, gradient } from "../theme";
 
 const GROWTH_PER_TICK = 0.03;
 const TICK_MS = 50;
@@ -31,10 +33,10 @@ export function PTTButton({ disabled, side, onStake }: Props) {
     amountRef.current = 0;
     lastTickMark.current = 0;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Animated.spring(scale, { toValue: 1.15, useNativeDriver: true }).start();
     timer.current = setInterval(() => {
       amountRef.current = Math.min(CAP, amountRef.current + GROWTH_PER_TICK);
       setAmount(amountRef.current);
+      scale.setValue(1 + amountRef.current * 0.05);
       if (amountRef.current - lastTickMark.current >= 0.25) {
         lastTickMark.current = amountRef.current;
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -58,23 +60,30 @@ export function PTTButton({ disabled, side, onStake }: Props) {
 
   return (
     <View style={styles.wrap}>
-      <Animated.View style={{ transform: [{ scale }] }}>
-        <Pressable
-          onPressIn={start}
-          onPressOut={release}
-          disabled={disabled}
-          style={[styles.button, disabled && styles.disabled, holding && styles.holding]}
-        >
-          <Text style={styles.mic}>🎙️</Text>
-          <Text style={styles.label}>
-            {holding ? `${amount.toFixed(2)} USDC` : "HOLD TO STAKE"}
-          </Text>
+      <Animated.View style={[styles.glow, { transform: [{ scale }] }]}>
+        <Pressable onPressIn={start} onPressOut={release} disabled={disabled}>
+          <LinearGradient
+            colors={disabled ? [colors.cardElevated, colors.cardElevated] : [...gradient]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.button}
+          >
+            <Feather
+              name="mic"
+              size={24}
+              color={disabled ? colors.textMuted : "#FFFFFF"}
+            />
+            <Text style={[styles.hold, disabled && { color: colors.textMuted }]}>
+              HOLD
+            </Text>
+            <Text style={styles.amount}>{holding ? amount.toFixed(2) : " "}</Text>
+          </LinearGradient>
         </Pressable>
       </Animated.View>
       <Text style={styles.hint}>
         {disabled
           ? "staking closed"
-          : `release stakes ${side.toUpperCase()} · max ${CAP.toFixed(2)}`}
+          : `Hold to stake · release to lock ${side.toUpperCase()}`}
       </Text>
     </View>
   );
@@ -82,17 +91,22 @@ export function PTTButton({ disabled, side, onStake }: Props) {
 
 const styles = StyleSheet.create({
   wrap: { alignItems: "center", gap: 10 },
+  glow: {
+    borderRadius: 60,
+    shadowColor: colors.accent,
+    shadowOpacity: 0.55,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 16,
+  },
   button: {
-    width: 132,
-    height: 132,
-    borderRadius: 66,
-    backgroundColor: colors.accent,
+    width: 116,
+    height: 116,
+    borderRadius: 58,
     alignItems: "center",
     justifyContent: "center",
   },
-  holding: { backgroundColor: "#FF8A50" },
-  disabled: { backgroundColor: colors.border },
-  mic: { fontSize: 34 },
-  label: { color: "#FFFFFF", fontWeight: "700", fontSize: 12, marginTop: 4 },
-  hint: { color: colors.textMuted, fontSize: 12 },
+  hold: { fontFamily: fonts.wordmark, fontSize: 12, color: "#FFFFFF", marginTop: 3 },
+  amount: { fontSize: 11, color: "#4A1B0C", fontWeight: "700", minHeight: 14 },
+  hint: { color: colors.textMuted, fontSize: 11 },
 });

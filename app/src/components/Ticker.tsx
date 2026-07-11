@@ -1,12 +1,11 @@
-// Single-line activity ticker (latest event).
+// Activity feed row (mockup style): quiet card with the latest event.
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { colors } from "../theme";
+import { colors, hairline, radius } from "../theme";
 
 export function Ticker({ message }: { message: string }) {
   return (
     <View style={styles.wrap}>
-      <Text style={styles.dot}>●</Text>
       <Text style={styles.text} numberOfLines={1}>
         {message}
       </Text>
@@ -15,7 +14,13 @@ export function Ticker({ message }: { message: string }) {
 }
 
 const styles = StyleSheet.create({
-  wrap: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 4 },
-  dot: { color: colors.accent, fontSize: 8 },
-  text: { color: colors.textSecondary, fontSize: 13, flex: 1 },
+  wrap: {
+    backgroundColor: colors.card,
+    borderWidth: hairline,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  text: { color: colors.textSecondary, fontSize: 11 },
 });

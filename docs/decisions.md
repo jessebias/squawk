@@ -137,6 +137,38 @@ Newest at the bottom. Format: date · decision · why.
   → bot's stake moved the pool live in-app → auto-claim on resolve → channel settled →
   Profile COLLECT returned the USDC on base layer.
 
+## 2026-07-11 — Phase 5 (UI overhaul to the approved mockup)
+
+- **App restyled to the two-screen mockup** (`squawk_clean_ui_two_screens.html`, faithful to
+  docs/plan.md §8): hairline borders, balance pill + bell header, search, trending pair cards
+  with blinking LIVE dot, category chips, five-tab bottom nav with the raised orange mic,
+  in-screen Channel header (back + CH id + LIVE·count), "Round N of M" + draining progress
+  bar, compact odds cards, feed row, mic-icon PTT that scales with the held amount. Icons via
+  Feather (@expo/vector-icons, bundled with Expo).
+- **Discover hides stale channels**: host scripts use `Date.now()` as channel_id and sessions
+  run ≤2h, so channels older than 2h (dead runs) are filtered client-side — crashed-run debris
+  was stealing joins on Discover.
+- Categories/chips and the bell are cosmetic for the hackathon; search filters by title.
+- **Premium pass (ALOT-style reference)**: near-black canvas (`#060608`) with higher-contrast
+  cards + `cardElevated` tier; orange→amber gradient (`#FF6B2C→#FFB03A`) on all primary CTAs
+  (PTT, tab-bar mic, balance "+" chip, COLLECT, active category tile) via `expo-linear-gradient`
+  (native module — required a rebuild); icon-tile category tabs; emoji cover/avatar tiles derived
+  from channel titles; timer pill + thicker progress bar; Profile rebuilt as Balance card
+  (Available / In channels) + Fund/Session/Address action tiles + gradient COLLECT per channel.
+  PTT glow uses colored elevation shadows (Android API 28+). Active bottom-nav tabs render the
+  icon+label through a gradient mask (`@react-native-masked-view/masked-view`, native module).
+  Trending is a snap-scrolling horizontal carousel (up to 6 channels, 148px cards, green pool
+  amounts) inside an elevated panel with a gradient glow line along its bottom edge.
+  `scripts/seed-demo.ts` is now real: seeds N open display channels with funded bot joins so
+  Discover/the carousel look alive for demos.
+- **Profile is the ALOT layout**: shared `AppHeader` (dual `available / total` balance pill) on
+  all tabs; Analytics card with a green area sparkline (`react-native-svg`, native module —
+  decorative curve, real winnings number); Balance + Gas card pair with corner token badges;
+  "available winnings" strip whose gradient **Collect** withdraws ALL settled channels
+  sequentially; Recent activity rows derived from memberships (collectible/in-play/settled).
+- **Running on the Seeker** (Solana Mobile device) over USB Metro (`adb reverse`); each device
+  generates its own local wallet + session key — fund via `scripts/fund-wallet.ts <address>`.
+
 ## Open questions (Phase 5)
 
 - MWA connect flow on a physical device (Solflare/Phantom) as the flagship join path for the

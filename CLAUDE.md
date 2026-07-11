@@ -20,9 +20,10 @@ squawk/
   programs/squawk/src/        # lib.rs, state.rs, errors.rs — single Anchor program
   tests/squawk.ts             # mocha tests (run via scripts/run-tests.js, NOT ts-mocha CLI)
   app/                        # Expo RN app from @solana-mobile/solana-mobile-expo-template
-    src/screens|components/   # Discover, Channel, Profile · PTTButton, OddsCards, RoundCard
-    src/lib/                  # connections.ts, program.ts, session.ts
-    src/theme.ts              # design tokens (docs/plan.md §8)
+    src/screens|components/   # Discover, Channel, Profile · PTT, OddsCards, RoundCard,
+                              # LiveDot, BottomTabBar (five-tab, raised mic)
+    src/lib/                  # connections.ts, program.ts, session.ts, squawk.ts
+    src/theme.ts              # §8 tokens per the approved mockup (hairlines, no gradients)
   scripts/                    # mint-mock-usdc.ts, seed-demo.ts, run-tests.js
   docs/                       # plan.md (working spec) + decisions.md (decision log)
 ```

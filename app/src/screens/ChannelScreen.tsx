@@ -1,10 +1,12 @@
 // The live channel: round card + odds + PTT, all fed by ER websockets.
 // Every stake here is a real Solana transaction on the Ephemeral Rollup.
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
-import { useRoute } from "@react-navigation/native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import { Feather } from "@expo/vector-icons";
 import { PublicKey } from "@solana/web3.js";
-import { colors } from "../theme";
+import { colors, hairline } from "../theme";
+import { LiveDot } from "../components/LiveDot";
 import { OddsCards } from "../components/OddsCards";
 import { PTTButton } from "../components/PTTButton";
 import { RoundCard } from "../components/RoundCard";
@@ -28,6 +30,7 @@ import { useWallet } from "../hooks/useWallet";
 
 export function ChannelScreen() {
   const route = useRoute();
+  const nav = useNavigation();
   const channelPk = new PublicKey((route.params as { channelPk: string }).channelPk);
   const wallet = useWallet();
 
@@ -176,42 +179,105 @@ export function ChannelScreen() {
   const canStake =
     !!member && round?.status === "staking" && (balance ?? 0) > 0 && channel?.status === "live";
 
+  const pool = ((round?.yesPool.toNumber() ?? 0) + (round?.noPool.toNumber() ?? 0)) / 1e6;
+
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>{channel?.title ?? "…"}</Text>
-      <RoundCard round={round} />
-      <OddsCards
-        yesPool={(round?.yesPool.toNumber() ?? 0) / 1e6}
-        noPool={(round?.noPool.toNumber() ?? 0) / 1e6}
-        selected={side}
-        onSelect={setSide}
-      />
-      <Ticker message={ticker} />
-      <PTTButton disabled={!canStake} side={side} onStake={stake} />
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>
-          balance {balance === null ? "—" : balance.toFixed(2)} USDC
-          {staked > 0 ? ` · staked ${staked.toFixed(2)}` : ""}
-        </Text>
-        <Text style={styles.footerText}>
-          {erTxs} ER txs this session · $0.00 fees
-        </Text>
+    <View style={styles.screen}>
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <Pressable onPress={() => nav.goBack()} hitSlop={12}>
+            <Feather name="chevron-left" size={20} color={colors.textSecondary} />
+          </Pressable>
+          <View>
+            <Text style={styles.title}>{channel?.title ?? "…"}</Text>
+            <Text style={styles.subtitle}>
+              CH {channel ? channel.channelId.toString().slice(-4) : "…"}
+              {channel && channel.status === "live"
+                ? ` · round ${channel.activeRound + 1}`
+                : ""}
+            </Text>
+          </View>
+        </View>
+        {channel?.status === "live" && (
+          <View style={styles.liveWrap}>
+            <LiveDot />
+            <Text style={styles.liveText}>
+              LIVE · <Text style={{ color: colors.textSecondary }}>{channel.userCount}</Text>
+            </Text>
+          </View>
+        )}
       </View>
-      {channel?.status === "open" && (
-        <Text style={styles.waiting}>channel opens when the host goes live…</Text>
-      )}
-      {channel?.status === "closed" && (
-        <Text style={styles.waiting}>channel settled — collect from Profile</Text>
-      )}
-    </ScrollView>
+
+      <ScrollView contentContainerStyle={styles.content}>
+        <RoundCard round={round} roundCount={channel?.roundCount ?? 0} />
+        <OddsCards
+          yesPool={(round?.yesPool.toNumber() ?? 0) / 1e6}
+          noPool={(round?.noPool.toNumber() ?? 0) / 1e6}
+          selected={side}
+          onSelect={setSide}
+        />
+        <View style={styles.poolRow}>
+          <Text style={styles.poolText}>Pool {pool.toFixed(2)} USDC</Text>
+          <Text style={styles.poolText}>0 fees on channel</Text>
+        </View>
+        <Ticker message={ticker} />
+        <PTTButton disabled={!canStake} side={side} onStake={stake} />
+        {channel?.status === "open" && (
+          <Text style={styles.waiting}>channel opens when the host goes live…</Text>
+        )}
+        {channel?.status === "closed" && (
+          <Text style={styles.waiting}>channel settled — collect from Profile</Text>
+        )}
+      </ScrollView>
+
+      <View style={styles.footer}>
+        <View style={styles.footerLeft}>
+          <Feather name="credit-card" size={14} color={colors.textMuted} />
+          <Text style={styles.footerBalance}>
+            {balance === null ? "—" : balance.toFixed(2)} USDC
+            {staked > 0 ? ` · staked ${staked.toFixed(2)}` : ""}
+          </Text>
+        </View>
+        <Text style={styles.footerText}>{erTxs} ER txs · $0.00 fees</Text>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 20, gap: 18 },
-  title: { color: colors.text, fontSize: 22, fontWeight: "800" },
-  footer: { alignItems: "center", gap: 2 },
-  footerText: { color: colors.textMuted, fontSize: 12 },
-  waiting: { color: colors.textSecondary, textAlign: "center" },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 12,
+  },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
+  title: { color: colors.text, fontSize: 14, fontWeight: "600" },
+  subtitle: { color: colors.textMuted, fontSize: 11 },
+  liveWrap: { flexDirection: "row", alignItems: "center", gap: 5 },
+  liveText: { color: colors.live, fontSize: 11, letterSpacing: 1, fontWeight: "600" },
+  content: { paddingHorizontal: 16, gap: 12, paddingBottom: 16 },
+  poolRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 4,
+  },
+  poolText: { color: colors.textMuted, fontSize: 11 },
+  waiting: { color: colors.textSecondary, textAlign: "center", fontSize: 12 },
+  footer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderTopWidth: hairline,
+    borderTopColor: colors.border,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginBottom: 4,
+  },
+  footerLeft: { flexDirection: "row", alignItems: "center", gap: 5 },
+  footerBalance: { color: colors.text, fontSize: 11 },
+  footerText: { color: colors.textMuted, fontSize: 11 },
 });

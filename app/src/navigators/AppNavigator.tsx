@@ -1,6 +1,6 @@
-// Squawk navigation: two dark tabs (Discover, Profile) + the Channel screen.
+// Squawk navigation: five-tab bar (Home, Explore, [mic], Activity, Profile)
+// per docs/plan.md §8, plus the Channel screen with its own in-screen header.
 import React from "react";
-import { Text } from "react-native";
 import { DarkTheme, NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
@@ -8,6 +8,8 @@ import { colors } from "../theme";
 import { DiscoverScreen } from "../screens/DiscoverScreen";
 import { ChannelScreen } from "../screens/ChannelScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
+import { makePlaceholder } from "../screens/PlaceholderScreen";
+import { BottomTabBar } from "../components/BottomTabBar";
 
 export type RootStackParamList = {
   Tabs: undefined;
@@ -22,6 +24,9 @@ declare global {
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator();
+
+const ExploreScreen = makePlaceholder("Explore", "compass");
+const ActivityScreen = makePlaceholder("Activity", "bar-chart-2");
 
 const navTheme = {
   ...DarkTheme,
@@ -38,19 +43,12 @@ const navTheme = {
 function Tabs() {
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.border },
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarIcon: ({ color }) => (
-          <Text style={{ color, fontSize: 16 }}>
-            {route.name === "Discover" ? "◉" : "▣"}
-          </Text>
-        ),
-      })}
+      screenOptions={{ headerShown: false }}
+      tabBar={(props) => <BottomTabBar {...props} />}
     >
-      <Tab.Screen name="Discover" component={DiscoverScreen} />
+      <Tab.Screen name="Home" component={DiscoverScreen} />
+      <Tab.Screen name="Explore" component={ExploreScreen} />
+      <Tab.Screen name="Activity" component={ActivityScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
@@ -64,11 +62,7 @@ export function AppNavigator() {
         <Stack.Screen
           name="Channel"
           component={ChannelScreen}
-          options={{
-            headerStyle: { backgroundColor: colors.background },
-            headerTintColor: colors.text,
-            headerTitle: "",
-          }}
+          options={{ headerShown: false }}
         />
       </Stack.Navigator>
     </NavigationContainer>

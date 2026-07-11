@@ -8,7 +8,7 @@ import {
   SystemProgram,
   Transaction,
 } from "@solana/web3.js";
-import { getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { getAccount, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { baseConn, erConn } from "./connections";
 import {
   channelPda,
@@ -39,6 +39,7 @@ export type RoundAccount = {
   status: "pending" | "staking" | "locked" | "resolvedYes" | "resolvedNo" | "voided";
   yesPool: BN;
   noPool: BN;
+  opensAt: BN;
   locksAt: BN;
   roundIndex: number;
 };
@@ -80,16 +81,36 @@ export function decodeRound(raw: any): RoundAccount {
     status: statusKey(raw.status) as RoundAccount["status"],
     yesPool: raw.yesPool,
     noPool: raw.noPool,
+    opensAt: raw.opensAt,
     locksAt: raw.locksAt,
     roundIndex: raw.roundIndex,
   };
 }
 
+export async function fetchUsdcBalance(user: PublicKey): Promise<number> {
+  try {
+    const mint = await getUsdcMint();
+    const ata = getAssociatedTokenAddressSync(mint, user);
+    const acc = await getAccount(baseConn, ata);
+    return Number(acc.amount) / USDC_DECIMALS;
+  } catch {
+    return 0;
+  }
+}
+
 export async function fetchChannels(): Promise<ChannelAccount[]> {
   const all = await (programBase.account as any).channel.all();
+  // Hide stale devnet debris: host scripts use Date.now() as channel_id and
+  // channels run ~2h max, so anything older is a dead channel from a crashed
+  // run, not a joinable room.
+  const cutoff = Date.now() - 2 * 60 * 60 * 1000;
   return all
     .map((c: any) => decodeChannel(c.publicKey, c.account))
-    .filter((c: ChannelAccount) => c.status === "open" || c.status === "live")
+    .filter(
+      (c: ChannelAccount) =>
+        (c.status === "open" || c.status === "live") &&
+        c.channelId.toNumber() > cutoff
+    )
     .sort((a: ChannelAccount, b: ChannelAccount) => b.channelId.cmp(a.channelId));
 }
 
