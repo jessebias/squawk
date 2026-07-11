@@ -175,6 +175,45 @@ Newest at the bottom. Format: date · decision · why.
   `dataSize` filter** — Member accounts created by pre-Phase-3 deploys have the old (smaller,
   no-`position`) layout and overrun the decoder ("Trying to access beyond buffer length").
 
+## 2026-07-12 — Privy social login + MWA connect
+
+- **Wallet precedence: privy → mwa → local burner**, implemented in
+  `app/src/providers/WalletProvider.tsx`; `useWallet` keeps its old surface so no screen changed.
+  The SESSION key stays the local burner in every mode — ER staking untouched.
+- **Privy Expo SDK (@privy-io/expo 0.70) is headless on mobile** — the daremarket-style modal is
+  custom (`components/LoginModal.tsx`) using `useLoginWithEmail` (OTP state machine) +
+  `useLoginWithOAuth`. **Login methods: email + X (twitter) + Telegram** (user's choice). Telegram
+  is a valid `OAuthProviderID` in Privy, so it works through the same `useLoginWithOAuth` hook as
+  X — no separate flow needed (verified live: modal renders all three against real credentials).
+  Embedded Solana wallets are NOT auto-created —
+  `WalletProvider` calls `solana.create()` on first login. Signing:
+  `wallets[0].getProvider().request({ method: "signAndSendTransaction", params: { transaction,
+  connection } })`.
+- **Credentials via env**: `EXPO_PUBLIC_PRIVY_APP_ID/_CLIENT_ID` in `app/.env` (gitignored).
+  Empty env ⇒ `privyEnabled=false` ⇒ PrivyProvider skipped entirely; burner+MWA still work
+  (verified). Dashboard needs a mobile app client: package `com.squawk.app`,
+  URL scheme `squawk` (added to app.json).
+- **Package renamed `com.solana.mobile.expo.template` → `com.squawk.app`** (display name → Squawk)
+  via `app.json` + `expo prebuild --clean`. Done BEFORE Privy dashboard config so the client is
+  registered against the real package. New package = fresh secure-store ⇒ new burner wallet
+  (old install orphaned). Old package uninstalled from the emulator.
+- **Integration gotchas (each cost a debug cycle)**:
+  1. **Polyfill order**: `react-native-get-random-values` MUST come before
+     `@ethersproject/shims`, else the shim injects a broken `getRandomValues` and
+     `Keypair.generate()` dies with "seed expected Uint8Array of length 32".
+  2. Do NOT set `unstable_enablePackageExports` globally in metro — it reroutes web3.js's
+     crypto deps to incompatible builds. Privy resolves fine without it…
+  3. …but Metro's resolver cache must be FRESH after installing the Privy deps: restart with
+     `expo start --clear` or you get phantom "Unable to resolve ./client/Privy.js" errors.
+  4. `viem` and `react-native-get-random-values` are undeclared-but-required peers.
+- MWA: existing template utils reused; `signAndSendTransaction` needs `minContextSlot` (from
+  `baseConn.getSlot()`); connect errors surface a friendly "is a wallet installed?" alert.
+- **VERIFIED end-to-end on real credentials (email login):** Profile shows PRIVY chip + email +
+  the auto-created embedded Solana wallet as the active `publicKey`; funded it via
+  `fund-wallet.ts`; joined a live channel (10 USDC deposit + session funding signed by the PRIVY
+  wallet — real base-layer gas spend), staked across 8 rounds via the session key, settled back
+  (balance 100 → 98.58). Package `com.squawk.app`; login methods email + X + Telegram all render.
+
 ## Open questions (Phase 5)
 
 - MWA connect flow on a physical device (Solflare/Phantom) as the flagship join path for the

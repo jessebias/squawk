@@ -17,6 +17,8 @@ import { colors, gradient, hairline, radius } from "../theme";
 import { baseConn } from "../lib/connections";
 import { buildWithdrawTx } from "../lib/squawk";
 import { AppHeader, useBalances } from "../components/AppHeader";
+import { LoginModal } from "../components/LoginModal";
+import { privyEnabled } from "../providers/WalletProvider";
 
 const short = (s: string) => `${s.slice(0, 4)}…${s.slice(-4)}`;
 
@@ -53,6 +55,18 @@ function Sparkline() {
 export function ProfileScreen() {
   const { wallet, available, total, memberships, refetchAll } = useBalances();
   const [collecting, setCollecting] = useState(false);
+  const [loginOpen, setLoginOpen] = useState(false);
+
+  const connectSeeker = async () => {
+    try {
+      await wallet.connectMwa();
+    } catch (e) {
+      Alert.alert(
+        "No wallet app found",
+        `Is a Seed Vault / MWA wallet installed on this device?\n${String(e).slice(0, 100)}`
+      );
+    }
+  };
 
   const sol = useQuery({
     queryKey: ["sol", wallet.publicKey?.toBase58()],
@@ -148,6 +162,59 @@ export function ProfileScreen() {
       contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 24 }}
     >
       <AppHeader />
+
+      <View style={styles.accountCard}>
+        <View style={styles.accountTop}>
+          <Text style={styles.cardTitle}>Account</Text>
+          <View style={styles.modeChip}>
+            <Text style={styles.modeChipText}>
+              {wallet.mode === "privy" ? "PRIVY" : wallet.mode === "mwa" ? "SEEKER" : "BURNER"}
+            </Text>
+          </View>
+        </View>
+
+        {wallet.privyAuthenticated ? (
+          <View style={styles.identityRow}>
+            <Text style={styles.identityText} numberOfLines={1}>
+              {wallet.identityLabel ?? "logged in"}
+            </Text>
+            <Pressable onPress={() => wallet.logoutPrivy()}>
+              <Text style={styles.linkText}>Log out</Text>
+            </Pressable>
+          </View>
+        ) : privyEnabled ? (
+          <Pressable onPress={() => setLoginOpen(true)}>
+            <LinearGradient
+              colors={[...gradient]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.loginBtn}
+            >
+              <Text style={styles.loginBtnText}>Log in or sign up</Text>
+            </LinearGradient>
+          </Pressable>
+        ) : (
+          <Text style={styles.mutedNote}>
+            Privy login off — set EXPO_PUBLIC_PRIVY_APP_ID / _CLIENT_ID in app/.env
+          </Text>
+        )}
+
+        {wallet.mwaConnected ? (
+          <View style={styles.identityRow}>
+            <Text style={styles.identityText}>
+              Seeker · {wallet.publicKey && wallet.mode === "mwa" ? short(wallet.publicKey.toBase58()) : "connected"}
+            </Text>
+            <Pressable onPress={() => wallet.disconnectMwa()}>
+              <Text style={styles.linkText}>Disconnect</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable style={styles.mwaBtn} onPress={connectSeeker}>
+            <Feather name="link" size={14} color={colors.text} />
+            <Text style={styles.mwaBtnText}>Connect Seeker wallet</Text>
+          </Pressable>
+        )}
+      </View>
 
       <View style={styles.analytics}>
         <View style={styles.analyticsTop}>
@@ -257,6 +324,10 @@ export function ProfileScreen() {
       {memberships.data?.length === 0 && (
         <Text style={styles.emptyText}>no channels yet — join one from Discover</Text>
       )}
+
+      {privyEnabled && (
+        <LoginModal visible={loginOpen} onClose={() => setLoginOpen(false)} />
+      )}
     </ScrollView>
   );
 }
@@ -264,6 +335,40 @@ export function ProfileScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   cardTitle: { color: colors.text, fontSize: 15, fontWeight: "700" },
+  accountCard: {
+    backgroundColor: colors.card,
+    borderRadius: radius.xl,
+    borderWidth: hairline,
+    borderColor: colors.border,
+    padding: 16,
+    gap: 10,
+  },
+  accountTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  modeChip: {
+    backgroundColor: colors.cardElevated,
+    borderRadius: radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  modeChipText: { color: colors.textSecondary, fontSize: 9, letterSpacing: 1, fontWeight: "800" },
+  identityRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  identityText: { color: colors.text, fontSize: 13, fontWeight: "600", flex: 1 },
+  linkText: { color: colors.accent, fontSize: 12, fontWeight: "700" },
+  loginBtn: { borderRadius: radius.sm, paddingVertical: 12, alignItems: "center" },
+  loginBtnText: { color: "#FFFFFF", fontWeight: "800", fontSize: 13 },
+  mwaBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: hairline,
+    borderColor: colors.border,
+    backgroundColor: colors.cardElevated,
+    borderRadius: radius.sm,
+    paddingVertical: 11,
+  },
+  mwaBtnText: { color: colors.text, fontSize: 13, fontWeight: "600" },
+  mutedNote: { color: colors.textMuted, fontSize: 11 },
   analytics: {
     backgroundColor: colors.card,
     borderRadius: radius.xl,

@@ -66,6 +66,13 @@ npx ts-node scripts/phase2-lifecycle.ts                     # delegation lifecyc
 npx ts-node scripts/phase3-simulate.ts                      # 10-round bot simulation
 ```
 
+## Wallets (app)
+
+Precedence **privy → mwa (Seeker) → local burner** via `app/src/providers/WalletProvider.tsx`;
+session key is always a local burner. Privy needs `EXPO_PUBLIC_PRIVY_APP_ID/_CLIENT_ID` in
+`app/.env` (empty ⇒ Privy disabled, burner+MWA only). Polyfill order in `polyfills.ts` is
+load-bearing; never enable metro package exports globally (docs/decisions.md 2026-07-12).
+
 ## Architecture invariants (non-negotiable)
 
 - **The vault (SPL token account) is NEVER delegated to the ER.** Real tokens live on base layer

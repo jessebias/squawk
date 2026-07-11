@@ -1,3 +1,10 @@
+// Privy polyfills — ORDER MATTERS: the secure RNG must land before
+// @ethersproject/shims, or the shim injects its own broken getRandomValues
+// ("seed expected Uint8Array of length 32" from Keypair.generate).
+import "fast-text-encoding";
+import "react-native-get-random-values";
+import "@ethersproject/shims";
+
 import { getRandomValues as expoCryptoGetRandomValues } from "expo-crypto";
 import { Buffer } from "buffer";
 
