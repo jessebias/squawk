@@ -1,0 +1,2728 @@
+{
+  "address": "4NT1YGUK1YWboAq9pyKLqGsHUQaRwDAi7kpATd6Ynuii",
+  "metadata": {
+    "name": "squawk",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Squawk — walkie-talkie micro prediction markets on MagicBlock Ephemeral Rollups"
+  },
+  "instructions": [
+    {
+      "name": "claim_round",
+      "docs": [
+        "Claim a resolved/voided position into the member ledger. Signerless and",
+        "permissionless: winnings can only ever go to the position's own member,",
+        "so anyone (client auto-claim, host close-out loop) may fire it."
+      ],
+      "discriminator": [
+        180,
+        73,
+        23,
+        99,
+        186,
+        205,
+        14,
+        200
+      ],
+      "accounts": [
+        {
+          "name": "channel",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel.channel_id",
+                "account": "Channel"
+              }
+            ]
+          }
+        },
+        {
+          "name": "round",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "arg",
+                "path": "round_index"
+              }
+            ]
+          }
+        },
+        {
+          "name": "member",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  101,
+                  109,
+                  98,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "account",
+                "path": "member.user",
+                "account": "Member"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "round_index",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "close_channel",
+      "docs": [
+        "Instruction 9 — host closes the channel ON THE ER: marks it Closed and",
+        "schedules commit + undelegation of the channel plus every delegated",
+        "account passed in remaining_accounts (members; rounds in Phase 3).",
+        "Base layer only ever sees status Closed after the commit lands, so",
+        "withdraw's Closed gate is inherently safe (Settling state not needed)."
+      ],
+      "discriminator": [
+        0,
+        104,
+        36,
+        1,
+        66,
+        0,
+        103,
+        157
+      ],
+      "accounts": [
+        {
+          "name": "host",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "channel"
+          ]
+        },
+        {
+          "name": "channel",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel.channel_id",
+                "account": "Channel"
+              }
+            ]
+          }
+        },
+        {
+          "name": "magic_program",
+          "address": "Magic11111111111111111111111111111111111111"
+        },
+        {
+          "name": "magic_context",
+          "writable": true,
+          "address": "MagicContext1111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "commit_rounds",
+      "docs": [
+        "Commit + undelegate a batch of delegated accounts (ER) without any",
+        "state change — used to release Round PDAs after close_channel so the",
+        "settlement bundle stays small. Permissionless: committing program",
+        "state back to base is always safe."
+      ],
+      "discriminator": [
+        204,
+        209,
+        239,
+        175,
+        26,
+        219,
+        104,
+        225
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "magic_program",
+          "address": "Magic11111111111111111111111111111111111111"
+        },
+        {
+          "name": "magic_context",
+          "writable": true,
+          "address": "MagicContext1111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_channel",
+      "docs": [
+        "Instruction 2 — host creates the channel + its vault (ATA owned by the",
+        "channel PDA; the vault is never delegated)."
+      ],
+      "discriminator": [
+        37,
+        105,
+        253,
+        99,
+        87,
+        46,
+        223,
+        20
+      ],
+      "accounts": [
+        {
+          "name": "host",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint",
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "channel",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "channel_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "usdc_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "channel_id",
+          "type": "u64"
+        },
+        {
+          "name": "title",
+          "type": "string"
+        },
+        {
+          "name": "ends_at",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "create_round",
+      "docs": [
+        "Pre-creates the next Round PDA (base layer, while Open — before",
+        "delegation). Rounds are created sequentially; the host script makes",
+        "round_count of them, then delegates each after go_live."
+      ],
+      "discriminator": [
+        229,
+        218,
+        236,
+        169,
+        231,
+        80,
+        134,
+        112
+      ],
+      "accounts": [
+        {
+          "name": "host",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "channel"
+          ]
+        },
+        {
+          "name": "channel",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel.channel_id",
+                "account": "Channel"
+              }
+            ]
+          }
+        },
+        {
+          "name": "round",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "arg",
+                "path": "round_index"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "_channel_id",
+          "type": "u64"
+        },
+        {
+          "name": "round_index",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "delegate_channel",
+      "docs": [
+        "Instruction 4b — delegate the Channel PDA to the ER. Host-only, Live only."
+      ],
+      "discriminator": [
+        218,
+        18,
+        146,
+        113,
+        52,
+        187,
+        159,
+        134
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "buffer_channel",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                50,
+                17,
+                170,
+                164,
+                130,
+                20,
+                111,
+                221,
+                3,
+                244,
+                34,
+                224,
+                125,
+                208,
+                8,
+                226,
+                83,
+                29,
+                12,
+                137,
+                79,
+                216,
+                163,
+                124,
+                142,
+                155,
+                192,
+                93,
+                68,
+                214,
+                27,
+                219
+              ]
+            }
+          }
+        },
+        {
+          "name": "delegation_record_channel",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegation_program"
+            }
+          }
+        },
+        {
+          "name": "delegation_metadata_channel",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegation_program"
+            }
+          }
+        },
+        {
+          "name": "channel",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "channel_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner_program",
+          "address": "4NT1YGUK1YWboAq9pyKLqGsHUQaRwDAi7kpATd6Ynuii"
+        },
+        {
+          "name": "delegation_program",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "channel_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "delegate_member",
+      "docs": [
+        "Instruction 4c — delegate one Member PDA to the ER. Host-only, Live only.",
+        "(The channel account may itself already be delegated; only its data is",
+        "read here, which survives delegation.)"
+      ],
+      "discriminator": [
+        73,
+        195,
+        177,
+        219,
+        182,
+        136,
+        230,
+        143
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "channel",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "channel_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "buffer_member",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "member"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                50,
+                17,
+                170,
+                164,
+                130,
+                20,
+                111,
+                221,
+                3,
+                244,
+                34,
+                224,
+                125,
+                208,
+                8,
+                226,
+                83,
+                29,
+                12,
+                137,
+                79,
+                216,
+                163,
+                124,
+                142,
+                155,
+                192,
+                93,
+                68,
+                214,
+                27,
+                219
+              ]
+            }
+          }
+        },
+        {
+          "name": "delegation_record_member",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "member"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegation_program"
+            }
+          }
+        },
+        {
+          "name": "delegation_metadata_member",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "member"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegation_program"
+            }
+          }
+        },
+        {
+          "name": "member",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  101,
+                  109,
+                  98,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "arg",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner_program",
+          "address": "4NT1YGUK1YWboAq9pyKLqGsHUQaRwDAi7kpATd6Ynuii"
+        },
+        {
+          "name": "delegation_program",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "_channel_id",
+          "type": "u64"
+        },
+        {
+          "name": "user",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "delegate_round",
+      "docs": [
+        "Instruction 4d — delegate one Round PDA to the ER. Host-only, Live only."
+      ],
+      "discriminator": [
+        4,
+        60,
+        37,
+        224,
+        19,
+        130,
+        106,
+        111
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "channel",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "channel_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "buffer_round",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  102,
+                  102,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "round"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                50,
+                17,
+                170,
+                164,
+                130,
+                20,
+                111,
+                221,
+                3,
+                244,
+                34,
+                224,
+                125,
+                208,
+                8,
+                226,
+                83,
+                29,
+                12,
+                137,
+                79,
+                216,
+                163,
+                124,
+                142,
+                155,
+                192,
+                93,
+                68,
+                214,
+                27,
+                219
+              ]
+            }
+          }
+        },
+        {
+          "name": "delegation_record_round",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "round"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegation_program"
+            }
+          }
+        },
+        {
+          "name": "delegation_metadata_round",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "round"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "delegation_program"
+            }
+          }
+        },
+        {
+          "name": "round",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "arg",
+                "path": "round_index"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner_program",
+          "address": "4NT1YGUK1YWboAq9pyKLqGsHUQaRwDAi7kpATd6Ynuii"
+        },
+        {
+          "name": "delegation_program",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "_channel_id",
+          "type": "u64"
+        },
+        {
+          "name": "round_index",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "extend_channel",
+      "docs": [
+        "Host extends the channel end time. Runs on the base layer before",
+        "delegation and on the ER while delegated — which makes it the Phase 2",
+        "proof op: after delegation it must fail on base and succeed on the ER."
+      ],
+      "discriminator": [
+        157,
+        1,
+        97,
+        135,
+        45,
+        68,
+        217,
+        226
+      ],
+      "accounts": [
+        {
+          "name": "host",
+          "signer": true,
+          "relations": [
+            "channel"
+          ]
+        },
+        {
+          "name": "channel",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel.channel_id",
+                "account": "Channel"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "new_ends_at",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "go_live",
+      "docs": [
+        "Instruction 4a (docs/plan.md §5.2) — host flips the channel Live.",
+        "Delegation of the channel/member accounts follows as separate",
+        "instructions (delegate_channel / delegate_member), composed by the",
+        "client, since each delegation is its own CPI."
+      ],
+      "discriminator": [
+        126,
+        98,
+        10,
+        43,
+        92,
+        184,
+        85,
+        248
+      ],
+      "accounts": [
+        {
+          "name": "host",
+          "signer": true,
+          "relations": [
+            "channel"
+          ]
+        },
+        {
+          "name": "channel",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel.channel_id",
+                "account": "Channel"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize_config",
+      "docs": [
+        "Instruction 1 (docs/plan.md §5.2) — one-time global config."
+      ],
+      "discriminator": [
+        208,
+        127,
+        21,
+        1,
+        194,
+        190,
+        196,
+        70
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "join_channel",
+      "docs": [
+        "Instruction 3 — user deposits USDC into the vault, gets a Member ledger,",
+        "and registers the session key allowed to stake/claim on their behalf."
+      ],
+      "discriminator": [
+        124,
+        39,
+        115,
+        89,
+        217,
+        26,
+        38,
+        29
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint",
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "channel",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel.channel_id",
+                "account": "Channel"
+              }
+            ]
+          }
+        },
+        {
+          "name": "member",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  101,
+                  109,
+                  98,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_token_account",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "usdc_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "session_key",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "lock_round",
+      "docs": [
+        "Instruction 7 — lock the round at locks_at. Signerless and",
+        "permissionless so both the MagicBlock crank and any client can fire it."
+      ],
+      "discriminator": [
+        68,
+        124,
+        43,
+        230,
+        30,
+        44,
+        248,
+        227
+      ],
+      "accounts": [
+        {
+          "name": "channel",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel.channel_id",
+                "account": "Channel"
+              }
+            ]
+          }
+        },
+        {
+          "name": "round",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "arg",
+                "path": "round_index"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "_round_index",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "open_round",
+      "docs": [
+        "Instruction 5 — host activates a pre-created round (ER)."
+      ],
+      "discriminator": [
+        66,
+        235,
+        123,
+        240,
+        8,
+        35,
+        185,
+        159
+      ],
+      "accounts": [
+        {
+          "name": "host",
+          "signer": true,
+          "relations": [
+            "channel"
+          ]
+        },
+        {
+          "name": "channel",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel.channel_id",
+                "account": "Channel"
+              }
+            ]
+          }
+        },
+        {
+          "name": "round",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "arg",
+                "path": "round_index"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "round_index",
+          "type": "u16"
+        },
+        {
+          "name": "question",
+          "type": "string"
+        },
+        {
+          "name": "locks_at",
+          "type": "i64"
+        },
+        {
+          "name": "resolves_by",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "process_undelegation",
+      "discriminator": [
+        196,
+        28,
+        41,
+        206,
+        48,
+        37,
+        51,
+        167
+      ],
+      "accounts": [
+        {
+          "name": "base_account",
+          "writable": true
+        },
+        {
+          "name": "buffer"
+        },
+        {
+          "name": "payer",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "account_seeds",
+          "type": {
+            "vec": "bytes"
+          }
+        }
+      ]
+    },
+    {
+      "name": "resolve_round",
+      "docs": [
+        "Instruction 8 — host resolves the round (host is the referee for the",
+        "MVP, disclosed in the UI). Accepts Locked, or Staking past locks_at so",
+        "a missed crank can't wedge the round. If the winning side has no",
+        "stakes, the round voids and claims refund everyone."
+      ],
+      "discriminator": [
+        165,
+        114,
+        237,
+        158,
+        1,
+        36,
+        70,
+        254
+      ],
+      "accounts": [
+        {
+          "name": "host",
+          "signer": true,
+          "relations": [
+            "channel"
+          ]
+        },
+        {
+          "name": "channel",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel.channel_id",
+                "account": "Channel"
+              }
+            ]
+          }
+        },
+        {
+          "name": "round",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "arg",
+                "path": "round_index"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "_round_index",
+          "type": "u16"
+        },
+        {
+          "name": "outcome",
+          "type": {
+            "defined": {
+              "name": "Side"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "schedule_lock_crank",
+      "docs": [
+        "Schedules a one-shot MagicBlock crank (ER) that fires lock_round at",
+        "the round's locks_at. lock_round stays permissionless, so a client can",
+        "always lock as fallback if the crank misses (docs/plan.md §5.2 item 7)."
+      ],
+      "discriminator": [
+        150,
+        96,
+        163,
+        30,
+        141,
+        150,
+        141,
+        93
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "channel",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel.channel_id",
+                "account": "Channel"
+              }
+            ]
+          }
+        },
+        {
+          "name": "round",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "arg",
+                "path": "round_index"
+              }
+            ]
+          }
+        },
+        {
+          "name": "magic_program",
+          "address": "Magic11111111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "round_index",
+          "type": "u16"
+        },
+        {
+          "name": "task_id",
+          "type": "i64"
+        },
+        {
+          "name": "delay_millis",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "stake",
+      "docs": [
+        "Instruction 6 — stake from the member ledger into a round pool (ER).",
+        "Signed by the member's wallet OR their registered session key."
+      ],
+      "discriminator": [
+        206,
+        176,
+        202,
+        18,
+        200,
+        209,
+        179,
+        108
+      ],
+      "accounts": [
+        {
+          "name": "signer",
+          "docs": [
+            "Member wallet OR registered session key (checked in the handler)."
+          ],
+          "signer": true
+        },
+        {
+          "name": "channel",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel.channel_id",
+                "account": "Channel"
+              }
+            ]
+          }
+        },
+        {
+          "name": "round",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "arg",
+                "path": "round_index"
+              }
+            ]
+          }
+        },
+        {
+          "name": "member",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  101,
+                  109,
+                  98,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "account",
+                "path": "member.user",
+                "account": "Member"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "round_index",
+          "type": "u16"
+        },
+        {
+          "name": "side",
+          "type": {
+            "defined": {
+              "name": "Side"
+            }
+          }
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "withdraw",
+      "docs": [
+        "Instruction 10 — redeem the Member ledger balance as real USDC.",
+        "Allowed while Open (back out before go_live) or Closed (after",
+        "settlement has committed back); never while Live/Settling, when the",
+        "ledger is delegated and in play."
+      ],
+      "discriminator": [
+        183,
+        18,
+        70,
+        156,
+        148,
+        109,
+        161,
+        34
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint",
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "channel",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel.channel_id",
+                "account": "Channel"
+              }
+            ]
+          }
+        },
+        {
+          "name": "member",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  101,
+                  109,
+                  98,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_token_account",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "usdc_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Channel",
+      "discriminator": [
+        49,
+        159,
+        99,
+        106,
+        220,
+        87,
+        219,
+        88
+      ]
+    },
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "Member",
+      "discriminator": [
+        54,
+        19,
+        162,
+        21,
+        29,
+        166,
+        17,
+        198
+      ]
+    },
+    {
+      "name": "Round",
+      "discriminator": [
+        87,
+        127,
+        165,
+        51,
+        73,
+        78,
+        116,
+        174
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "TitleTooLong",
+      "msg": "Title exceeds 64 bytes"
+    },
+    {
+      "code": 6001,
+      "name": "QuestionTooLong",
+      "msg": "Question exceeds 128 bytes"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidEndsAt",
+      "msg": "ends_at must be in the future"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidAmount",
+      "msg": "Amount must be greater than zero"
+    },
+    {
+      "code": 6004,
+      "name": "ChannelNotOpen",
+      "msg": "Channel is not open for joining"
+    },
+    {
+      "code": 6005,
+      "name": "WithdrawLocked",
+      "msg": "Withdrawals are locked while the channel is live or settling"
+    },
+    {
+      "code": 6006,
+      "name": "NothingToWithdraw",
+      "msg": "Nothing to withdraw"
+    },
+    {
+      "code": 6007,
+      "name": "Overflow",
+      "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6008,
+      "name": "Unauthorized",
+      "msg": "Only the channel host may do this"
+    },
+    {
+      "code": 6009,
+      "name": "ChannelNotLive",
+      "msg": "Channel is not live"
+    },
+    {
+      "code": 6010,
+      "name": "SessionKeyInvalid",
+      "msg": "Signer is neither the member nor their session key"
+    },
+    {
+      "code": 6011,
+      "name": "RoundOutOfOrder",
+      "msg": "Rounds must be created in order"
+    },
+    {
+      "code": 6012,
+      "name": "RoundNotPending",
+      "msg": "Round is not pending"
+    },
+    {
+      "code": 6013,
+      "name": "RoundNotStaking",
+      "msg": "Round is not open for staking"
+    },
+    {
+      "code": 6014,
+      "name": "RoundLockPassed",
+      "msg": "Round is already past its lock time"
+    },
+    {
+      "code": 6015,
+      "name": "RoundNotLockable",
+      "msg": "Round lock time has not been reached"
+    },
+    {
+      "code": 6016,
+      "name": "RoundNotResolvable",
+      "msg": "Round is not resolvable yet"
+    },
+    {
+      "code": 6017,
+      "name": "RoundNotResolved",
+      "msg": "Round is not resolved"
+    },
+    {
+      "code": 6018,
+      "name": "InvalidRoundTiming",
+      "msg": "Invalid round timing"
+    },
+    {
+      "code": 6019,
+      "name": "InsufficientBalance",
+      "msg": "Insufficient ledger balance"
+    },
+    {
+      "code": 6020,
+      "name": "OppositeSide",
+      "msg": "Position is on the opposite side"
+    },
+    {
+      "code": 6021,
+      "name": "PositionPending",
+      "msg": "Previous position must be claimed first"
+    },
+    {
+      "code": 6022,
+      "name": "NothingToClaim",
+      "msg": "No open position to claim"
+    },
+    {
+      "code": 6023,
+      "name": "WrongRound",
+      "msg": "Position belongs to a different round"
+    }
+  ],
+  "types": [
+    {
+      "name": "Channel",
+      "docs": [
+        "The room — seeds `[\"channel\", channel_id: u64 le]`. Delegated while Live."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "host",
+            "type": "pubkey"
+          },
+          {
+            "name": "channel_id",
+            "type": "u64"
+          },
+          {
+            "name": "title",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "ChannelStatus"
+              }
+            }
+          },
+          {
+            "name": "round_count",
+            "type": "u16"
+          },
+          {
+            "name": "active_round",
+            "type": "u16"
+          },
+          {
+            "name": "total_pool",
+            "docs": [
+              "Sum of all member deposits currently held in the vault (ledger total)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "user_count",
+            "type": "u16"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "ends_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ChannelStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Open"
+          },
+          {
+            "name": "Live"
+          },
+          {
+            "name": "Settling"
+          },
+          {
+            "name": "Closed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Config",
+      "docs": [
+        "Global config — seeds `[\"config\"]`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Member",
+      "docs": [
+        "Per-user channel ledger — seeds `[\"member\", channel_key, user]`.",
+        "Delegated while Live; only ledger numbers move on the ER, never tokens."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "channel",
+            "type": "pubkey"
+          },
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "deposited",
+            "docs": [
+              "Lifetime deposits (history; not zeroed on withdraw)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "balance",
+            "docs": [
+              "Withdrawable ledger balance; updated in the ER as rounds resolve."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "session_key",
+            "docs": [
+              "Session key allowed to sign stake/claim_round for this member."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "position",
+            "docs": [
+              "The single open position (amount == 0 → none)."
+            ],
+            "type": {
+              "defined": {
+                "name": "Position"
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Position",
+      "docs": [
+        "The member's single open position, embedded in `Member` (deviation from",
+        "docs/plan.md §5.1 standalone PDAs — see docs/decisions.md Phase 3): rounds",
+        "are sequential, so one open position per member suffices and no accounts",
+        "ever need creating on the ER. `amount == 0` means no open position. A",
+        "second stake on the same side adds to `amount`; the opposite side is",
+        "rejected; staking a new round requires claiming the old position first",
+        "(clients auto-claim on resolution)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_index",
+            "type": "u16"
+          },
+          {
+            "name": "side",
+            "type": {
+              "defined": {
+                "name": "Side"
+              }
+            }
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Round",
+      "docs": [
+        "One micro-question — seeds `[\"round\", channel_key, round_index: u16 le]`.",
+        "Delegated while Live."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "channel",
+            "type": "pubkey"
+          },
+          {
+            "name": "round_index",
+            "type": "u16"
+          },
+          {
+            "name": "question",
+            "type": {
+              "array": [
+                "u8",
+                128
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "RoundStatus"
+              }
+            }
+          },
+          {
+            "name": "yes_pool",
+            "docs": [
+              "Live pools: stakes flow in during Staking, claims deduct after resolve.",
+              "Whatever remains after all claims is unclaimed/dust and stays accounted."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "no_pool",
+            "type": "u64"
+          },
+          {
+            "name": "snap_yes",
+            "docs": [
+              "Pool snapshots taken at resolve time — payout ratios use these so",
+              "claim order can't change anyone's share."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "snap_no",
+            "type": "u64"
+          },
+          {
+            "name": "opens_at",
+            "type": "i64"
+          },
+          {
+            "name": "locks_at",
+            "type": "i64"
+          },
+          {
+            "name": "resolves_by",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Pending"
+          },
+          {
+            "name": "Staking"
+          },
+          {
+            "name": "Locked"
+          },
+          {
+            "name": "ResolvedYes"
+          },
+          {
+            "name": "ResolvedNo"
+          },
+          {
+            "name": "Voided"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Side",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Yes"
+          },
+          {
+            "name": "No"
+          }
+        ]
+      }
+    }
+  ]
+}

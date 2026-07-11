@@ -103,7 +103,42 @@ Newest at the bottom. Format: date · decision · why.
 - Devnet simulation record: 3 bots × 15 USDC, 10 rounds, 93 ER txs, 1 settlement commitment
   (`g2PeGc…W5XE`), withdrawals 16.1/7.7/21.2 USDC.
 
-## Open questions (resolve in Phase 4)
+## 2026-07-11 — Phase 4 (mobile app, accepted on emulator + devnet ER)
 
-- Official Session Keys SDK React hooks in React Native vs burner-keypair fallback.
-- Which MWA wallet app on the demo devices (Phantom / Solflare / fakewallet).
+- **Session keys: burner keypair in expo-secure-store**, registered as `Member.session_key` at
+  join (resolves the §7.3 question). The program's own signer check (`user || session_key`) made
+  the external `gpl_session` program unnecessary; the official SDK's React hooks were never
+  needed. Every ER interaction (stake/claim) is signed popup-free by this key; join funds it
+  with 0.005 SOL as a fee envelope (ER fees are $0 but the fee payer account must exist).
+- **Local burner wallet is the app's default identity** (secure-store; join/withdraw signed
+  locally). The template's MWA plumbing (`useMobileWallet`/`useAuthorization`) is retained for
+  wiring a real wallet app on demo devices as Phase 5 polish — the §11 "burner-wallet-only
+  fallback" is thus the default rather than the fallback. `scripts/fund-wallet.ts <address>`
+  funds the wallet shown on the Profile screen.
+- **Live updates: 1–3s polling is the workhorse, ER websocket is a bonus.** RN's ER websocket
+  delivery proved unreliable (no events on account clone at delegation; often none at all), so:
+  channel 3s poll (ER→base fallback), active round 1s poll, member 2s poll — each plus a ws sub
+  for sub-second odds when it works.
+- **RN/Hermes gotchas fixed in `app/src/polyfills.ts` + `lib/program.ts`** (all three cost real
+  debugging time — do not regress):
+  1. `Buffer.prototype.subarray` loses Buffer methods under Hermes → re-attach prototype
+     (breaks anchor account decoding with `readUIntLE is not a function` otherwise);
+  2. Hermes lacks `structuredClone` → JSON round-trip polyfill (anchor clones the IDL);
+  3. anchor's `Wallet` class is Node-only (undefined in RN) → stub the wallet interface for the
+     read-only provider.
+- **App RPC: `rpc.magicblock.app/devnet`** — the public devnet RPC blocks `getProgramAccounts`
+  (Discover's channel list) and rate-limits.
+- **`scripts/host-demo.ts`** drives live demos: create → pre-create rounds → bot joins → wait
+  for phones (`--auto=<s>` or ENTER) → go_live + delegate all → rounds on a 15s cadence with
+  crank locks + bot stakes → Ctrl+C settles (claim sweep, close, commit_rounds).
+- **Crank race is benign but real**: a manual `lock_round` fallback can lose the race to the
+  crank and hit `RoundNotStaking` — host scripts treat that error as "crank won".
+- E2E proof on emulator: join 10 USDC → PTT hold staked 1.05 via session key (1 ER tx, $0.00)
+  → bot's stake moved the pool live in-app → auto-claim on resolve → channel settled →
+  Profile COLLECT returned the USDC on base layer.
+
+## Open questions (Phase 5)
+
+- MWA connect flow on a physical device (Solflare/Phantom) as the flagship join path for the
+  demo video; emulator stays on the local wallet.
+- Second physical device for the two-phones demo shot.

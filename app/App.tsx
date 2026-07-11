@@ -1,82 +1,33 @@
-// Polyfills
+// Polyfills first — required by @solana/web3.js and anchor in RN.
 import "./src/polyfills";
 
-import { StyleSheet, useColorScheme } from "react-native";
+import React from "react";
+import { StatusBar, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-
-import { ConnectionProvider } from "./src/utils/ConnectionProvider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  DarkTheme as NavigationDarkTheme,
-  DefaultTheme as NavigationDefaultTheme,
-} from "@react-navigation/native";
-import {
-  PaperProvider,
-  MD3DarkTheme,
-  MD3LightTheme,
-  adaptNavigationTheme,
-} from "react-native-paper";
+import { useFonts, Bungee_400Regular } from "@expo-google-fonts/bungee";
 import { AppNavigator } from "./src/navigators/AppNavigator";
-import { ClusterProvider } from "./src/components/cluster/cluster-data-access";
+import { colors } from "./src/theme";
 
 const queryClient = new QueryClient();
 
 export default function App() {
-  const colorScheme = useColorScheme();
-  const { LightTheme, DarkTheme } = adaptNavigationTheme({
-    reactNavigationLight: NavigationDefaultTheme,
-    reactNavigationDark: NavigationDarkTheme,
-  });
+  const [fontsLoaded] = useFonts({ Bungee_400Regular });
 
-  const CombinedDefaultTheme = {
-    ...MD3LightTheme,
-    ...LightTheme,
-    colors: {
-      ...MD3LightTheme.colors,
-      ...LightTheme.colors,
-    },
-  };
-  const CombinedDarkTheme = {
-    ...MD3DarkTheme,
-    ...DarkTheme,
-    colors: {
-      ...MD3DarkTheme.colors,
-      ...DarkTheme.colors,
-    },
-  };
+  if (!fontsLoaded) {
+    return <View style={styles.shell} />;
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
-      <ClusterProvider>
-        <ConnectionProvider config={{ commitment: "processed" }}>
-          <SafeAreaView
-            style={[
-              styles.shell,
-              {
-                backgroundColor:
-                  colorScheme === "dark"
-                    ? MD3DarkTheme.colors.background
-                    : MD3LightTheme.colors.background,
-              },
-            ]}
-          >
-            <PaperProvider
-              theme={
-                colorScheme === "dark"
-                  ? CombinedDarkTheme
-                  : CombinedDefaultTheme
-              }
-            >
-              <AppNavigator />
-            </PaperProvider>
-          </SafeAreaView>
-        </ConnectionProvider>
-      </ClusterProvider>
+      <SafeAreaView style={styles.shell}>
+        <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+        <AppNavigator />
+      </SafeAreaView>
     </QueryClientProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  shell: {
-    flex: 1,
-  },
+  shell: { flex: 1, backgroundColor: colors.background },
 });

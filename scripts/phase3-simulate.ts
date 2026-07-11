@@ -233,12 +233,16 @@ async function main(): Promise<void> {
     if ("locked" in status && crankScheduled) {
       crankLocks++;
     } else if ("staking" in status) {
-      await programER.methods
-        .lockRound(r)
-        .accountsPartial({ channel: channelPda, round: roundPda(r) })
-        .rpc({ skipPreflight: true });
-      erTxCount++;
-      manualLocks++;
+      try {
+        await programER.methods
+          .lockRound(r)
+          .accountsPartial({ channel: channelPda, round: roundPda(r) })
+          .rpc({ skipPreflight: true });
+        erTxCount++;
+        manualLocks++;
+      } catch {
+        crankLocks++; // benign race: the crank locked it between fetch and tx
+      }
     }
 
     const outcome = Math.random() < 0.5 ? { yes: {} } : { no: {} };

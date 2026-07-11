@@ -57,9 +57,12 @@ yarn android                       # build + install + run on emulator/device (s
 npx expo start --dev-client        # metro only, once dev build is installed
 npx tsc --noEmit                   # typecheck
 
-# ops
+# ops (all default to rpc.magicblock.app/devnet — public RPC blocks gPA + rate-limits)
 npx ts-node scripts/mint-mock-usdc.ts
-npx ts-node scripts/seed-demo.ts   # demo channel + funds demo wallets (SOL AND mock USDC)
+npx ts-node scripts/fund-wallet.ts <address> [sol] [usdc]   # fund the app's Profile wallet
+npx ts-node scripts/host-demo.ts [rounds] [--auto=<s>]      # drive a live demo channel
+npx ts-node scripts/phase2-lifecycle.ts                     # delegation lifecycle proof
+npx ts-node scripts/phase3-simulate.ts                      # 10-round bot simulation
 ```
 
 ## Architecture invariants (non-negotiable)
@@ -97,8 +100,11 @@ npx ts-node scripts/seed-demo.ts   # demo channel + funds demo wallets (SOL AND 
       `scripts/phase2-lifecycle.ts`; mock USDC mint + endpoints in docs/decisions.md)
 - [x] Phase 3 — round engine in the ER (crank-locked rounds proven on devnet by
       `scripts/phase3-simulate.ts`: 93 ER txs · 1 settlement · conservation exact)
-- [ ] Phase 4 — mobile app core (MWA connect, session keys, three screens, live odds)
-- [ ] Phase 5 — polish + demo video + Luma submission (Sunday)
+- [x] Phase 4 — mobile app core (burner session keys, three screens, live odds via ER
+      polling+ws; full join→stake→claim→settle→collect loop verified on emulator.
+      RN/Hermes gotchas are documented in docs/decisions.md — don't regress polyfills.ts)
+- [ ] Phase 5 — polish + demo video + Luma submission (Sunday): MWA connect on a real
+      device, second phone, tx-counter closing shot, README demo script, record + submit
 
 Keep this file, docs/plan.md, and docs/decisions.md in sync with any change to commands, layout, versions,
 or architecture. AGENTS.md and GEMINI.md are symlinks to this file.

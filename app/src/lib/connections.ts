@@ -4,7 +4,8 @@
 // the router is used only for getDelegationStatus.
 import { Connection, PublicKey } from "@solana/web3.js";
 
-export const DEVNET_RPC = "https://api.devnet.solana.com";
+// magicblock RPC: api.devnet.solana.com blocks getProgramAccounts + rate-limits
+export const DEVNET_RPC = "https://rpc.magicblock.app/devnet";
 export const EPHEMERAL_RPC = "https://devnet-as.magicblock.app/";
 export const ROUTER_RPC = "https://devnet-router.magicblock.app/";
 
