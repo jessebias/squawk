@@ -19,15 +19,9 @@ import { buildWithdrawTx } from "../lib/squawk";
 import { AppHeader, useBalances } from "../components/AppHeader";
 import { LoginModal } from "../components/LoginModal";
 import { privyEnabled } from "../providers/WalletProvider";
+import { emojiOf, plainTitle } from "../lib/demoContent";
 
 const short = (s: string) => `${s.slice(0, 4)}…${s.slice(-4)}`;
-
-const emojiOf = (title: string): string => {
-  const m = title.match(/\p{Extended_Pictographic}/u);
-  return m ? m[0] : "🎙️";
-};
-const plainTitle = (title: string): string =>
-  title.replace(/\p{Extended_Pictographic}/gu, "").trim();
 
 function Sparkline() {
   return (

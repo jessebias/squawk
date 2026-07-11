@@ -9,11 +9,10 @@ import { useQuery } from "@tanstack/react-query";
 import type { PublicKey } from "@solana/web3.js";
 import { colors, fonts, gradient, hairline, radius } from "../theme";
 import { fetchLeaderboard, type LeaderboardEntry } from "../lib/squawk";
+import { avatarOf } from "../lib/demoContent";
 import { useWallet } from "../hooks/useWallet";
 import { AppHeader } from "../components/AppHeader";
 
-const AVATARS = ["🦅", "🐸", "🦊", "🐙", "🐼", "🦁", "🐯", "🦉", "🐺", "🦄", "🐨", "🦖"];
-const avatarOf = (user: PublicKey) => AVATARS[user.toBytes()[0] % AVATARS.length];
 const short = (s: string) => `${s.slice(0, 4)}…${s.slice(-4)}`;
 
 export function LeaderboardScreen() {

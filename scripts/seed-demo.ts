@@ -25,13 +25,15 @@ const BASE_RPC = process.env.SOLANA_RPC_URL ?? "https://rpc.magicblock.app/devne
 const WALLET_PATH =
   process.env.ANCHOR_WALLET ?? path.join(os.homedir(), ".config/solana/jbias.json");
 
+// hoursOverride (argv[2]) forces every channel's lifetime; default is the
+// per-channel stagger below so Discover shows varied countdown chips.
 const CHANNELS = [
-  { title: "⚽ Madrid vs Inter", deposit: 24 },
-  { title: "🎮 Ranked duo stream", deposit: 17 },
-  { title: "📈 SOL price next hour", deposit: 31 },
-  { title: "🏆 Hackathon finals", deposit: 140 },
-  { title: "🎬 Blitz demos", deposit: 30 },
+  { title: "⚽ Madrid vs Inter", deposit: 24, hours: 6 * 24 },
+  { title: "🏀 Lakers vs Celtics", deposit: 42, hours: 3 * 24 },
 ];
+
+const normalizeTitle = (t: string) =>
+  t.replace(/\p{Extended_Pictographic}/gu, "").trim().toLowerCase();
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -53,15 +55,37 @@ async function main(): Promise<void> {
   );
   const usdcMint: PublicKey = (await (program.account as any).config.fetch(configPda)).usdcMint;
 
+  const hoursOverride = process.argv[2] ? Number(process.argv[2]) : null;
+
+  // Idempotent: skip titles that already exist as open/live channels, so
+  // re-running tops up the demo set instead of duplicating channels.
+  const now = Math.floor(Date.now() / 1000);
+  const existing = new Set(
+    ((await (program.account as any).channel.all()) as any[])
+      .filter((c) => {
+        const st = Object.keys(c.account.status)[0];
+        return (st === "open" || st === "live") && c.account.endsAt.toNumber() > now;
+      })
+      .map((c) =>
+        normalizeTitle(Buffer.from(c.account.title).toString("utf8").replace(/\0+$/, ""))
+      )
+  );
+
   for (const spec of CHANNELS) {
+    if (existing.has(normalizeTitle(spec.title))) {
+      console.log(`• ${spec.title} — already live, skipping`);
+      continue;
+    }
     const channelId = new anchor.BN(Date.now());
     const [channelPda] = PublicKey.findProgramAddressSync(
       [Buffer.from("channel"), channelId.toArrayLike(Buffer, "le", 8)],
       program.programId
     );
     const vault = getAssociatedTokenAddressSync(usdcMint, channelPda, true);
+    const lifetimeHours = hoursOverride ?? spec.hours;
+    const endsAt = new anchor.BN(Math.floor(Date.now() / 1000) + lifetimeHours * 3600);
     await program.methods
-      .createChannel(channelId, spec.title, new anchor.BN(Math.floor(Date.now() / 1000) + 7200))
+      .createChannel(channelId, spec.title, endsAt)
       .accountsPartial({
         host: payer.publicKey,
         config: configPda,
@@ -100,10 +124,12 @@ async function main(): Promise<void> {
       })
       .signers([bot])
       .rpc();
-    console.log(`✓ ${spec.title} · ${spec.deposit} USDC pool · ${channelPda.toBase58()}`);
+    console.log(
+      `✓ ${spec.title} · ${spec.deposit} USDC pool · ${lifetimeHours}h · ${channelPda.toBase58()}`
+    );
     await sleep(400);
   }
-  console.log("\nseeded — channels visible on Discover for ~2h");
+  console.log("\nseeded — channels stay on Discover until each ends_at passes");
 }
 
 main().catch((e) => {

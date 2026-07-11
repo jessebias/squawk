@@ -1,5 +1,6 @@
-// Discover — premium pass (ALOT reference): near-black canvas, gradient
-// accents, icon-tile categories, avatar rows with bold pool numbers.
+// Discover — header, search, trending carousel, category tiles, then the
+// feature feed (ALOT reference): big cover cards with tag chips + countdowns.
+// Category tiles filter the feed via demoContent's title→category map.
 import React, { useMemo, useState } from "react";
 import {
   Alert,
@@ -17,8 +18,10 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { colors, gradient, hairline, radius } from "../theme";
 import { buildJoinTx, fetchChannels, type ChannelAccount } from "../lib/squawk";
+import { contentFor, plainTitle } from "../lib/demoContent";
 import { useWallet } from "../hooks/useWallet";
-import { LiveDot } from "../components/LiveDot";
+import { FeatureCard } from "../components/FeatureCard";
+import { ChannelCover } from "../components/ChannelCover";
 import { AppHeader } from "../components/AppHeader";
 import type { RootStackParamList } from "../navigators/AppNavigator";
 
@@ -30,13 +33,6 @@ const CATEGORIES: { label: string; icon: keyof typeof Feather.glyphMap }[] = [
   { label: "Crypto", icon: "trending-up" },
   { label: "IRL", icon: "map-pin" },
 ];
-
-const emojiOf = (title: string): string => {
-  const m = title.match(/\p{Extended_Pictographic}/u);
-  return m ? m[0] : "🎙️";
-};
-const plainTitle = (title: string): string =>
-  title.replace(/\p{Extended_Pictographic}/gu, "").trim();
 
 export function DiscoverScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -59,7 +55,14 @@ export function DiscoverScreen() {
     [channels.data, search]
   );
   const trending = filtered.slice(0, 6);
-  const rest = filtered.slice(6);
+  const catLabel = CATEGORIES[category].label;
+  const feed = useMemo(
+    () =>
+      catLabel === "All"
+        ? filtered
+        : filtered.filter((c) => contentFor(c.title).category === catLabel),
+    [filtered, catLabel]
+  );
 
   const open = async (channel: ChannelAccount) => {
     if (channel.status === "live") {
@@ -96,15 +99,7 @@ export function DiscoverScreen() {
         disabled={joining !== null}
         style={[styles.trendCard, live && { borderColor: colors.accent, borderWidth: 0.75 }]}
       >
-        <View style={styles.cover}>
-          <Text style={styles.coverEmoji}>{emojiOf(c.title)}</Text>
-          {live && (
-            <View style={styles.liveBadge}>
-              <LiveDot size={5} />
-              <Text style={styles.liveText}>LIVE</Text>
-            </View>
-          )}
-        </View>
+        <ChannelCover channel={c} style={styles.cover} emojiSize={34} compact />
         <Text style={styles.trendTitle} numberOfLines={1}>
           {plainTitle(c.title)}
         </Text>
@@ -118,8 +113,8 @@ export function DiscoverScreen() {
     );
   };
 
-  return (
-    <View style={styles.screen}>
+  const header = (
+    <View>
       <AppHeader />
 
       <View style={styles.search}>
@@ -184,46 +179,34 @@ export function DiscoverScreen() {
           );
         })}
       </View>
+    </View>
+  );
 
+  return (
+    <View style={styles.screen}>
       <FlatList
-        data={rest}
+        data={feed}
         keyExtractor={(c) => c.pubkey.toBase58()}
+        ListHeaderComponent={header}
         renderItem={({ item }) => (
-          <Pressable
-            style={styles.row}
+          <FeatureCard
+            channel={item}
             onPress={() => open(item)}
             disabled={joining !== null}
-          >
-            <View style={styles.rowLeft}>
-              <View style={styles.avatar}>
-                <Text style={{ fontSize: 16 }}>{emojiOf(item.title)}</Text>
-              </View>
-              <View>
-                <Text style={styles.rowTitle}>{plainTitle(item.title)}</Text>
-                <Text style={styles.rowMeta}>
-                  {item.userCount} in{item.status === "open" ? " · tap to join" : " · live"}
-                </Text>
-              </View>
-            </View>
-            <View style={styles.rowRight}>
-              <Text style={styles.rowPool}>
-                {(item.totalPool.toNumber() / 1e6).toFixed(1)}
-              </Text>
-              <Feather name="chevron-right" size={16} color={colors.textMuted} />
-            </View>
-          </Pressable>
+          />
         )}
-        contentContainerStyle={{ gap: 8, paddingBottom: 16 }}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ gap: 12, paddingBottom: 16 }}
         ListEmptyComponent={
-          trending.length === 0 ? (
-            <Text style={styles.empty}>
-              {channels.isLoading
-                ? "scanning devnet…"
-                : channels.error
-                ? `error: ${String(channels.error).slice(0, 160)}`
-                : "no channels yet — start one from the host laptop"}
-            </Text>
-          ) : null
+          <Text style={styles.empty}>
+            {channels.isLoading
+              ? "scanning devnet…"
+              : channels.error
+              ? `error: ${String(channels.error).slice(0, 160)}`
+              : catLabel !== "All" && filtered.length > 0
+              ? `no ${catLabel.toLowerCase()} channels right now`
+              : "no channels yet — start one from the host laptop"}
+          </Text>
         }
       />
     </View>
@@ -284,23 +267,7 @@ const styles = StyleSheet.create({
     height: 76,
     borderRadius: radius.md - 4,
     backgroundColor: colors.card,
-    alignItems: "center",
-    justifyContent: "center",
   },
-  coverEmoji: { fontSize: 34 },
-  liveBadge: {
-    position: "absolute",
-    top: 6,
-    left: 6,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "rgba(6,6,8,0.75)",
-    borderRadius: 999,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-  },
-  liveText: { color: colors.live, fontSize: 9, letterSpacing: 1, fontWeight: "700" },
   trendTitle: { color: colors.text, fontSize: 13, fontWeight: "600", paddingHorizontal: 2 },
   trendMeta: { color: colors.textMuted, fontSize: 11, paddingHorizontal: 2 },
   trendPool: { color: colors.yesText, fontWeight: "700" },
@@ -319,29 +286,5 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   tileLabel: { color: colors.textMuted, fontSize: 10 },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: colors.card,
-    borderWidth: hairline,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-  },
-  rowLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
-  avatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: colors.cardElevated,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  rowTitle: { color: colors.text, fontSize: 13, fontWeight: "600" },
-  rowMeta: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
-  rowRight: { flexDirection: "row", alignItems: "center", gap: 6 },
-  rowPool: { color: colors.text, fontSize: 13, fontWeight: "700" },
   empty: { color: colors.textMuted, textAlign: "center", marginTop: 48, fontSize: 12 },
 });

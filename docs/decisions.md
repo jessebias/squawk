@@ -214,6 +214,29 @@ Newest at the bottom. Format: date · decision · why.
   wallet — real base-layer gas spend), staked across 8 rounds via the session key, settled back
   (balance 100 → 98.58). Package `com.squawk.app`; login methods email + X + Telegram all render.
 
+## 2026-07-12 — Persistent demo channels + Discover feature feed
+
+- **Channel visibility is now the on-chain `ends_at`** (open|live AND not expired) — replaces the
+  client-side "channel_id older than 2h" heuristic that made seeded channels vanish mid-demo.
+  `seed-demo.ts` seeds 7 channels across categories with staggered 18h–7d lifetimes (optional
+  argv hours override), so Discover stays populated for the whole hackathon and the channels
+  remain genuinely joinable.
+- **Feature feed under the category tiles** (ALOT reference): `FeatureCard` = big cover, tag
+  chips, countdown chip ("2 days"/"17h" from real ends_at), green pool. Discover is one FlatList
+  (header = search/carousel/tiles). **Category tiles now actually filter the feed** via
+  `demoContent.ts` — a client-side keyword map from seeded titles → curated Unsplash cover +
+  tags + category (real channel state, decorated presentation; unknown titles fall back to the
+  emoji cover). Emoji always renders under the remote image as a loading/failure placeholder.
+  Gotcha: keep keyword regexes word-bounded — `/ath/` matched "hack**ath**on" and put a Bitcoin
+  cover on the Hackathon finals card.
+- Shared `emojiOf/plainTitle/avatarOf/countdownLabel` consolidated into `demoContent.ts`
+  (were duplicated across Discover/Profile/Leaderboard).
+- **Retired demo titles hidden client-side** (`RETIRED_TITLES` in `fetchChannels`): removing a
+  seeded channel from Discover can only be done by title filter — the program has no
+  cancel/delete instruction and `extend_channel` only moves `ends_at` forward, so already-seeded
+  channels persist on-chain until they expire. Also removed from `seed-demo.ts` (kept Madrid vs
+  Inter + Lakers vs Celtics).
+
 ## Open questions (Phase 5)
 
 - MWA connect flow on a physical device (Solflare/Phantom) as the flagship join path for the

@@ -125,18 +125,31 @@ export async function fetchUsdcBalance(user: PublicKey): Promise<number> {
   }
 }
 
+// Retired demo titles: still on-chain (no cancel instruction; they linger
+// until ends_at) but hidden from Discover. Emoji-stripped, lowercased.
+const RETIRED_TITLES = new Set([
+  "ranked duo stream",
+  "blitz demos live",
+  "sol hits 300 this week",
+  "btc breaks ath",
+  "hackathon finals",
+  "muay thai title fight",
+]);
+const normalizeTitle = (t: string) =>
+  t.replace(/\p{Extended_Pictographic}/gu, "").trim().toLowerCase();
+
 export async function fetchChannels(): Promise<ChannelAccount[]> {
   const all = await (programBase.account as any).channel.all();
-  // Hide stale devnet debris: host scripts use Date.now() as channel_id and
-  // channels run ~2h max, so anything older is a dead channel from a crashed
-  // run, not a joinable room.
-  const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+  // Visibility = the channel's own on-chain lifetime: open|live AND not past
+  // ends_at, minus any retired demo titles.
+  const now = Math.floor(Date.now() / 1000);
   return all
     .map((c: any) => decodeChannel(c.publicKey, c.account))
     .filter(
       (c: ChannelAccount) =>
         (c.status === "open" || c.status === "live") &&
-        c.channelId.toNumber() > cutoff
+        c.endsAt.toNumber() > now &&
+        !RETIRED_TITLES.has(normalizeTitle(c.title))
     )
     .sort((a: ChannelAccount, b: ChannelAccount) => b.channelId.cmp(a.channelId));
 }
