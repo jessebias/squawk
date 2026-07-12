@@ -26,6 +26,10 @@ create_channel ──► join_channel(×N)
 
 The key safety decision: **the token vault is never delegated.** Real tokens stay on the base layer the entire session — the ER only moves ledger numbers inside `Member`/`Round` accounts, so a bug in ER logic can never move tokens without passing through base-layer settlement checks. Session keys make staking popup-free: the main wallet signs only join/deposit and withdraw.
 
+### Private channels: blind betting on a TEE (Private Ephemeral Rollups)
+
+Public channels have a herding problem — you can watch the pools and follow the crowd. **Private channels** run on MagicBlock's TEE-backed **Private ER** instead: the round's pools are readable *only by the host* (ephemeral permission accounts gate reads at the TEE), each player's stakes are visible only to them, and everyone follows the round through a "board mirror" on the channel account. Pools and outcome reveal at the host's call — true blind betting, enforced by hardware attestation rather than promises. Unlisted by design: share the invite code or `squawk://channel/<pubkey>` deep link. Proven end to end on the devnet TEE by `scripts/phase-per-lifecycle.ts` (unauthenticated reads blocked → member read matrix → blind stake lands → crank lock → reveal → settlement + withdraw).
+
 ## Repo layout
 
 ```
@@ -55,11 +59,14 @@ npx expo run:android             # builds + installs the dev client, starts Metr
 ## Status
 
 - [x] Phase 0 — repo bootstrap (Anchor + Expo scaffolds verified end to end)
-- [ ] Phase 1 — program skeleton: channels, deposits, withdrawals
-- [ ] Phase 2 — ER delegation lifecycle on devnet
-- [ ] Phase 3 — round engine: stake / lock (crank) / resolve / claim
-- [ ] Phase 4 — mobile app: MWA, session keys, live odds
-- [ ] Phase 5 — polish, demo video, submission
+- [x] Phase 1 — program skeleton: channels, deposits, withdrawals (19 localnet tests)
+- [x] Phase 2 — ER delegation lifecycle, accepted on devnet (`scripts/phase2-lifecycle.ts`)
+- [x] Phase 3 — round engine: stake / crank lock / resolve / claim (`scripts/phase3-simulate.ts`: 94 ER txs · 1 settlement · exact conservation)
+- [x] Phase 4 — mobile app: walkie-talkie UI, session keys, live odds, in-app hosting, Privy/MWA login
+- [x] Phase 5 — private channels on the TEE Private ER (`scripts/phase-per-lifecycle.ts`), polish
+- [ ] Demo video + submission
+
+Deployed devnet program: `4NT1YGUK1YWboAq9pyKLqGsHUQaRwDAi7kpATd6Ynuii`
 
 ## Demo (2 minutes)
 

@@ -294,7 +294,10 @@ export async function sendLocal(
   const sig = await connection.sendRawTransaction(tx.serialize(), {
     skipPreflight: true,
   });
-  await connection.confirmTransaction(sig, "confirmed");
+  const res = await connection.confirmTransaction(sig, "confirmed");
+  // skipPreflight means on-chain failures only surface here — without this
+  // check a rejected stake/claim looks like success to the caller.
+  if (res.value.err) throw new Error(`transaction failed: ${JSON.stringify(res.value.err)}`);
   return sig;
 }
 

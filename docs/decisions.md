@@ -325,6 +325,63 @@ Newest at the bottom. Format: date · decision · why.
   errors render in-panel (describeError) instead of Alert.alert — the End-channel confirm
   alert stays.
 
+## 2026-07-12 — Channel screen restyled as a walkie-talkie handset
+
+- **Full device chrome in the Squawk palette** (near-black body `#0E0E12`, bezel `#2E2E38`, no
+  yellow plastic): `HandsetFrame` (antenna nub + vent strip + live/private LED) wraps the whole
+  live view; `FrequencyDisplay` (inset black LCD, **Orbitron** digits via
+  `@expo-google-fonts/orbitron` — Metro-bundled, no native rebuild) **replaces RoundCard**:
+  CH #### / RND n/m / signal bars, a pseudo-frequency line derived from the channel id
+  (`400 + id % 100000 / 1000` MHz), a giant glowing countdown with an `8:88` ghost-segment
+  layer, the question, and the drain bar. `SpeakerGrille` = dot columns with an animated
+  brightness wave (slow shimmer while staking, fast **orange ripple while transmitting**).
+- **The device reacts to real state only** (no fake controls): `PTTButton` gained
+  `onHoldChange` so holding drives the grille ripple, the LCD `TX ●` tag + glow border, and
+  the "● N connected · TRANSMITTING / no transmission" readout. PTT restyled as a bezeled
+  hardware button ("PUSH TO TALK"); OddsCards became raised device buttons with a lit LED on
+  the selected side; status/pool/conn lines use the Orbitron LCD voice. All data wiring
+  (blind mode, TEE conns, auto-claim, HostPanel, SettlementCard, JOIN) untouched.
+- **Gotcha:** RN `interpolate` requires a monotonic inputRange — the grille's
+  `[r-1.5, r, r+1.5, ROWS]` crashed on the last row (`r+1.5 > ROWS`); the trailing `ROWS` stop
+  is redundant with `extrapolate:"clamp"`.
+- Discover's join alert now uses `describeError` (was `String(e)` → "[object Object]").
+- E2E on emulator + devnet: joined via deep link + the in-channel JOIN button, live round
+  countdown ticked, PTT hold showed TX state, release staked 1.77 (1 ER tx) and moved the
+  odds against the bot.
+
+## 2026-07-12 — Hold-to-stake PTT + walkie flavor app-wide
+
+- **PTT relabeled to the game's actual verb**: idle face is mic + "HOLD TO STAKE"; while held
+  the face swaps to a **large Orbitron amount growing live under the thumb** ("1.14" + USDC
+  tag) — the accumulator was already there, now it's the hero. Mechanics untouched.
+- **LCD voice extended to shared chrome, real data only**: Discover's marquee is a
+  radio-scanner strip (LCD black, Orbitron orange, fixed "● SCAN" status cap over the left
+  edge); the AppHeader balance pill is an LCD readout (kept the green $ and gradient + chips);
+  copy retuned — "Scan frequencies", "no signal — tap + to open a frequency",
+  CreateChannel = "Open a frequency". Deliberately skipped: tab bar (already reads as the
+  hardware row), Leaderboard signal bars / Profile callsigns (kitsch risk).
+- E2E on emulator + devnet: funded the drained burner (fund-wallet.ts), joined via deep link
+  + JOIN button, held → face showed 1.14 USDC growing + TX state, released → staked 1.89
+  (1 ER tx, ticker "+1.89 on YES"). Header pill honestly showed 0.00 when the wallet was
+  actually broke — the "transient" reading was real data.
+
+## 2026-07-12 — AppHeader antenna experiment reverted
+
+- Tried styling the header's right side as the radio's top corner (antenna + signal arcs +
+  LED on the balance pill, bell in a knob). Two iterations still read cluttered at header
+  scale — reverted to the plain LCD pill + bell. The walkie motif stays where it has room:
+  the Channel handset and the scanner ticker. (Kept for reuse: per-side border colors +
+  borderRadius silently don't render on Android — use `react-native-svg` for arcs.)
+
+## 2026-07-12 — Wallet connect folded into the login modal
+
+- **One auth entry point**: the LoginModal now carries a "Connect Wallet" row (MWA, via a new
+  `onConnectWallet` prop — the modal itself stays Privy-hook-only) under email/X/Telegram, and
+  Profile's separate connect button is gone. Errors surface in-modal. When Privy is disabled
+  (`privyEnabled=false`, modal can't mount without the provider) a standalone Connect Wallet
+  button remains as the fallback. All "Seeker" labels renamed to "Wallet" (mode chip
+  SEEKER → WALLET; it's MWA, not Seeker-specific).
+
 ## Open questions (Phase 5)
 
 - MWA connect flow on a physical device (Solflare/Phantom) as the flagship join path for the

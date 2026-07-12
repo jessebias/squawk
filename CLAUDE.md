@@ -20,8 +20,10 @@ squawk/
   programs/squawk/src/        # lib.rs, state.rs, errors.rs — single Anchor program
   tests/squawk.ts             # mocha tests (run via scripts/run-tests.js, NOT ts-mocha CLI)
   app/                        # Expo RN app from @solana-mobile/solana-mobile-expo-template
-    src/screens|components/   # Discover, Channel, CreateChannel, Profile · PTT, OddsCards,
-                              # RoundCard, LiveDot, HostPanel (in-app hosting),
+    src/screens|components/   # Discover, Channel, CreateChannel, Profile · the Channel screen
+                              # is a walkie-talkie handset: HandsetFrame, FrequencyDisplay
+                              # (Orbitron LCD; replaced RoundCard), SpeakerGrille, PTT,
+                              # OddsCards (device buttons), LiveDot, HostPanel,
                               # BottomTabBar (five-tab, raised + opens CreateChannel)
     src/lib/                  # connections.ts, program.ts, session.ts, hostKey.ts,
                               # squawk.ts, host.ts (phone-side host actions)

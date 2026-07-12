@@ -75,6 +75,9 @@ export function AppNavigator() {
         <Stack.Screen
           name="Channel"
           component={ChannelScreen}
+          // distinct screen per channel — without this, deep-linking to a
+          // second channel while one is open silently no-ops
+          getId={({ params }) => params.channelPk}
           options={{ headerShown: false }}
         />
         <Stack.Screen

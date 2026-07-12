@@ -20,7 +20,13 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { colors, gradient, hairline, radius } from "../theme";
-import { buildJoinTx, fetchChannels, type ChannelAccount } from "../lib/squawk";
+import {
+  buildJoinTx,
+  fetchChannels,
+  fetchMemberships,
+  type ChannelAccount,
+} from "../lib/squawk";
+import { describeError } from "../lib/host";
 import { haptic } from "../lib/haptics";
 import { contentFor, plainTitle } from "../lib/demoContent";
 import { useWallet } from "../hooks/useWallet";
@@ -55,6 +61,13 @@ export function DiscoverScreen() {
     queryFn: fetchChannels,
     refetchInterval: 4000,
   });
+  // same key as AppHeader's useBalances — shared cache, no extra RPC load
+  const memberships = useQuery({
+    queryKey: ["memberships", wallet.publicKey?.toBase58()],
+    enabled: !!wallet.publicKey,
+    refetchInterval: 8000,
+    queryFn: () => fetchMemberships(wallet.publicKey!),
+  });
 
   const filtered = useMemo(
     () =>
@@ -87,7 +100,14 @@ export function DiscoverScreen() {
   );
 
   const open = async (channel: ChannelAccount) => {
-    if (channel.status === "live") {
+    // Auto-join from the card ONLY when we know we're not a member yet —
+    // re-joining fails on-chain with a scary alert. Live channel, existing
+    // membership, or memberships still loading → just enter (the channel
+    // screen has its own JOIN button).
+    const alreadyIn =
+      !memberships.data ||
+      memberships.data.some((m) => m.channel.pubkey.equals(channel.pubkey));
+    if (channel.status === "live" || alreadyIn) {
       nav.navigate("Channel", { channelPk: channel.pubkey.toBase58() });
       return;
     }
@@ -104,10 +124,16 @@ export function DiscoverScreen() {
       haptic.success();
       nav.navigate("Channel", { channelPk: channel.pubkey.toBase58() });
     } catch (e) {
+      const msg = describeError(e);
+      // duplicate join (Member account already exists) → we're in — enter
+      if (msg.includes('"Custom":0')) {
+        nav.navigate("Channel", { channelPk: channel.pubkey.toBase58() });
+        return;
+      }
       haptic.error();
       Alert.alert(
         "Join failed",
-        `${String(e).slice(0, 140)}\n\nFund this wallet from Profile (needs devnet SOL + mock USDC).`
+        `${msg.slice(0, 140)}\n\nFund this wallet from Profile (needs devnet SOL + mock USDC).`
       );
     } finally {
       setJoining(null);
@@ -162,7 +188,7 @@ export function DiscoverScreen() {
         <Feather name="search" size={15} color={colors.textMuted} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search channels"
+          placeholder="Scan frequencies"
           placeholderTextColor={colors.textMuted}
           value={search}
           onChangeText={setSearch}
@@ -293,8 +319,8 @@ export function DiscoverScreen() {
               {channels.error
                 ? `error: ${String(channels.error).slice(0, 160)}`
                 : catLabel !== "All" && filtered.length > 0
-                ? `no ${catLabel.toLowerCase()} channels right now`
-                : "no channels yet — tap + to start one"}
+                ? `no ${catLabel.toLowerCase()} signal right now`
+                : "no signal — tap + to open a frequency"}
             </Text>
           )
         }
