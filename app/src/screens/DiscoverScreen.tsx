@@ -6,12 +6,14 @@ import React, { useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import { PublicKey } from "@solana/web3.js";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useQuery } from "@tanstack/react-query";
@@ -19,12 +21,14 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { colors, gradient, hairline, radius } from "../theme";
 import { buildJoinTx, fetchChannels, type ChannelAccount } from "../lib/squawk";
+import { haptic } from "../lib/haptics";
 import { contentFor, plainTitle } from "../lib/demoContent";
 import { useWallet } from "../hooks/useWallet";
 import { FeatureCard } from "../components/FeatureCard";
 import { ChannelCover } from "../components/ChannelCover";
 import { AppHeader } from "../components/AppHeader";
 import { ActivityTicker, type TickerItem } from "../components/ActivityTicker";
+import { Skeleton } from "../components/Skeleton";
 import type { RootStackParamList } from "../navigators/AppNavigator";
 
 const JOIN_AMOUNT_USDC = 10;
@@ -42,6 +46,9 @@ export function DiscoverScreen() {
   const [joining, setJoining] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState(0);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteCode, setInviteCode] = useState("");
+  const [inviteError, setInviteError] = useState<string | null>(null);
 
   const channels = useQuery({
     queryKey: ["channels"],
@@ -94,14 +101,31 @@ export function DiscoverScreen() {
         JOIN_AMOUNT_USDC
       );
       await wallet.signAndSend(tx);
+      haptic.success();
       nav.navigate("Channel", { channelPk: channel.pubkey.toBase58() });
     } catch (e) {
+      haptic.error();
       Alert.alert(
         "Join failed",
         `${String(e).slice(0, 140)}\n\nFund this wallet from Profile (needs devnet SOL + mock USDC).`
       );
     } finally {
       setJoining(null);
+    }
+  };
+
+  // unlisted private channels are reached by pasting the invite code (the
+  // channel pubkey) or the squawk://channel/<pk> deep link
+  const openInvite = () => {
+    const raw = inviteCode.trim().replace(/^squawk:\/\/channel\//i, "");
+    try {
+      const pk = new PublicKey(raw);
+      setInviteOpen(false);
+      setInviteCode("");
+      setInviteError(null);
+      nav.navigate("Channel", { channelPk: pk.toBase58() });
+    } catch {
+      setInviteError("that doesn't look like a channel code");
     }
   };
 
@@ -143,6 +167,9 @@ export function DiscoverScreen() {
           value={search}
           onChangeText={setSearch}
         />
+        <Pressable onPress={() => setInviteOpen(true)} hitSlop={8}>
+          <Feather name="key" size={15} color={colors.textMuted} />
+        </Pressable>
       </View>
 
       {trending.length > 0 && (
@@ -201,6 +228,47 @@ export function DiscoverScreen() {
 
   return (
     <View style={styles.screen}>
+      <Modal
+        visible={inviteOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setInviteOpen(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setInviteOpen(false)}>
+          <Pressable style={styles.modalCard} onPress={() => {}}>
+            <View style={styles.modalHead}>
+              <Feather name="lock" size={14} color={colors.accent} />
+              <Text style={styles.modalTitle}>Join a private channel</Text>
+            </View>
+            <Text style={styles.modalHint}>
+              paste the invite code or squawk:// link the host shared
+            </Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="channel code"
+              placeholderTextColor={colors.textMuted}
+              value={inviteCode}
+              onChangeText={(t) => {
+                setInviteCode(t);
+                setInviteError(null);
+              }}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {inviteError && <Text style={styles.modalError}>{inviteError}</Text>}
+            <Pressable onPress={openInvite} disabled={inviteCode.trim().length === 0}>
+              <LinearGradient
+                colors={[...gradient]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[styles.modalCta, inviteCode.trim().length === 0 && { opacity: 0.4 }]}
+              >
+                <Text style={styles.modalCtaText}>OPEN CHANNEL</Text>
+              </LinearGradient>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
       <FlatList
         data={feed}
         keyExtractor={(c) => c.pubkey.toBase58()}
@@ -215,15 +283,20 @@ export function DiscoverScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ gap: 12, paddingBottom: 16 }}
         ListEmptyComponent={
-          <Text style={styles.empty}>
-            {channels.isLoading
-              ? "scanning devnet…"
-              : channels.error
-              ? `error: ${String(channels.error).slice(0, 160)}`
-              : catLabel !== "All" && filtered.length > 0
-              ? `no ${catLabel.toLowerCase()} channels right now`
-              : "no channels yet — start one from the host laptop"}
-          </Text>
+          channels.isLoading ? (
+            <View style={{ gap: 12 }}>
+              <Skeleton height={180} />
+              <Skeleton height={180} style={{ opacity: 0.6 }} />
+            </View>
+          ) : (
+            <Text style={styles.empty}>
+              {channels.error
+                ? `error: ${String(channels.error).slice(0, 160)}`
+                : catLabel !== "All" && filtered.length > 0
+                ? `no ${catLabel.toLowerCase()} channels right now`
+                : "no channels yet — tap + to start one"}
+            </Text>
+          )
         }
       />
     </View>
@@ -305,4 +378,34 @@ const styles = StyleSheet.create({
   },
   tileLabel: { color: colors.textMuted, fontSize: 10 },
   empty: { color: colors.textMuted, textAlign: "center", marginTop: 48, fontSize: 12 },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  modalCard: {
+    backgroundColor: colors.card,
+    borderWidth: hairline,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
+    padding: 18,
+    gap: 10,
+  },
+  modalHead: { flexDirection: "row", alignItems: "center", gap: 6 },
+  modalTitle: { color: colors.text, fontSize: 15, fontWeight: "700" },
+  modalHint: { color: colors.textMuted, fontSize: 11 },
+  modalInput: {
+    backgroundColor: colors.cardElevated,
+    borderWidth: hairline,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: colors.text,
+    fontSize: 12,
+  },
+  modalError: { color: colors.noText, fontSize: 11 },
+  modalCta: { borderRadius: radius.md, paddingVertical: 12, alignItems: "center" },
+  modalCtaText: { color: "#FFFFFF", fontSize: 12, fontWeight: "700", letterSpacing: 1 },
 });

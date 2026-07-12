@@ -1,7 +1,11 @@
 // Compact YES/NO cards per the mockup: label + big percentage; the selected
 // side gets its tint background and a 1px colored border.
+// `hidden` = private-channel blind mode: the pools are unreadable on the TEE
+// while the round is staking, so both cards show "?" — the side selection
+// still works (that's the blind bet).
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { colors, hairline, radius } from "../theme";
 
 type Props = {
@@ -9,9 +13,10 @@ type Props = {
   noPool: number;
   selected: "yes" | "no";
   onSelect: (side: "yes" | "no") => void;
+  hidden?: boolean;
 };
 
-export function OddsCards({ yesPool, noPool, selected, onSelect }: Props) {
+export function OddsCards({ yesPool, noPool, selected, onSelect, hidden }: Props) {
   const total = yesPool + noPool;
   const yesPct = total === 0 ? 50 : Math.round((yesPool / total) * 100);
   const noPct = total === 0 ? 50 : 100 - yesPct;
@@ -24,6 +29,7 @@ export function OddsCards({ yesPool, noPool, selected, onSelect }: Props) {
     border: string
   ) => {
     const on = selected === side;
+    const pool = side === "yes" ? yesPool : noPool;
     return (
       <Pressable
         onPress={() => onSelect(side)}
@@ -35,23 +41,32 @@ export function OddsCards({ yesPool, noPool, selected, onSelect }: Props) {
         ]}
       >
         <Text style={[styles.side, { color: labelColor }]}>{side.toUpperCase()}</Text>
-        <Text style={styles.pct}>{pct}%</Text>
+        <Text style={styles.pct}>{hidden ? "?" : `${pct}%`}</Text>
         <Text style={styles.pool}>
-          {(side === "yes" ? yesPool : noPool).toFixed(2)}
+          {hidden ? "hidden until the call" : total === 0 ? "no stakes yet" : pool.toFixed(2)}
         </Text>
       </Pressable>
     );
   };
 
   return (
-    <View style={styles.row}>
-      {card("yes", yesPct, colors.yesText, colors.yesTint, colors.yes)}
-      {card("no", noPct, colors.noText, colors.noTint, colors.no)}
+    <View style={styles.wrap}>
+      <View style={styles.row}>
+        {card("yes", yesPct, colors.yesText, colors.yesTint, colors.yes)}
+        {card("no", noPct, colors.noText, colors.noTint, colors.no)}
+      </View>
+      {hidden && (
+        <View style={styles.blindRow}>
+          <Feather name="eye-off" size={11} color={colors.textMuted} />
+          <Text style={styles.blindText}>blind round — odds reveal at the call</Text>
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrap: { gap: 6 },
   row: { flexDirection: "row", gap: 10 },
   card: {
     flex: 1,
@@ -63,4 +78,11 @@ const styles = StyleSheet.create({
   side: { fontSize: 11, fontWeight: "700", letterSpacing: 1 },
   pct: { fontSize: 26, fontWeight: "800", color: colors.text },
   pool: { fontSize: 10, color: colors.textMuted },
+  blindRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+  },
+  blindText: { color: colors.textMuted, fontSize: 10 },
 });

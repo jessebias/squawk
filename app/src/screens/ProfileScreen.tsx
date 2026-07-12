@@ -16,6 +16,7 @@ import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { colors, gradient, hairline, radius } from "../theme";
 import { baseConn } from "../lib/connections";
 import { buildWithdrawTx } from "../lib/squawk";
+import { haptic } from "../lib/haptics";
 import { AppHeader, useBalances } from "../components/AppHeader";
 import { LoginModal } from "../components/LoginModal";
 import { privyEnabled } from "../providers/WalletProvider";
@@ -91,8 +92,10 @@ export function ProfileScreen() {
         await wallet.signAndSend(tx);
         collected += m.member.balance.toNumber() / 1e6;
       }
+      haptic.success();
       Alert.alert("Collected", `${collected.toFixed(2)} USDC is back in your wallet.`);
     } catch (e) {
+      haptic.error();
       Alert.alert(
         "Collect stopped",
         `Collected ${collected.toFixed(2)} so far.\n${String(e).slice(0, 120)}`

@@ -63,7 +63,7 @@ export function BottomTabBar({ state, navigation }: BottomTabBarProps) {
       {tab("Home", 0)}
       {tab("Explore", 1)}
       <View style={styles.tab}>
-        <Pressable onPress={() => navigation.navigate("Home")} style={styles.micWrap}>
+        <Pressable onPress={() => navigation.navigate("CreateChannel")} style={styles.micWrap}>
           <LinearGradient
             colors={[...gradient]}
             start={{ x: 0, y: 0 }}

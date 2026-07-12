@@ -28,8 +28,12 @@ export function RoundCard({
 
   const staking = round?.status === "staking";
   const secondsLeft = round ? Math.max(0, round.locksAt.toNumber() - now) : 0;
+  // Board-mirror rounds (private channels) carry no opens_at — approximate
+  // the staking window so the drain bar still reads; the timer stays exact.
   const window = round
-    ? Math.max(1, round.locksAt.toNumber() - round.opensAt.toNumber())
+    ? round.opensAt.toNumber() > 0
+      ? Math.max(1, round.locksAt.toNumber() - round.opensAt.toNumber())
+      : 30
     : 1;
   const frac = staking ? Math.min(1, secondsLeft / window) : 0;
 

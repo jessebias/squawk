@@ -7,6 +7,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { colors } from "../theme";
 import { DiscoverScreen } from "../screens/DiscoverScreen";
 import { ChannelScreen } from "../screens/ChannelScreen";
+import { CreateChannelScreen } from "../screens/CreateChannelScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
 import { LeaderboardScreen } from "../screens/LeaderboardScreen";
 import { makePlaceholder } from "../screens/PlaceholderScreen";
@@ -15,6 +16,7 @@ import { BottomTabBar } from "../components/BottomTabBar";
 export type RootStackParamList = {
   Tabs: undefined;
   Channel: { channelPk: string };
+  CreateChannel: undefined;
 };
 
 declare global {
@@ -54,15 +56,35 @@ function Tabs() {
   );
 }
 
+// Deep links: squawk://channel/<pubkey> — how unlisted private channels are
+// shared (scheme registered in app.json).
+const linking = {
+  prefixes: ["squawk://"],
+  config: {
+    screens: {
+      Channel: "channel/:channelPk",
+    },
+  },
+};
+
 export function AppNavigator() {
   return (
-    <NavigationContainer theme={navTheme}>
+    <NavigationContainer theme={navTheme} linking={linking}>
       <Stack.Navigator>
         <Stack.Screen name="Tabs" component={Tabs} options={{ headerShown: false }} />
         <Stack.Screen
           name="Channel"
           component={ChannelScreen}
           options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="CreateChannel"
+          component={CreateChannelScreen}
+          options={{
+            headerShown: false,
+            presentation: "modal",
+            animation: "slide_from_bottom",
+          }}
         />
       </Stack.Navigator>
     </NavigationContainer>

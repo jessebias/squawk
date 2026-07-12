@@ -1,17 +1,29 @@
 // The live channel: round card + odds + PTT, all fed by ER websockets.
 // Every stake here is a real Solana transaction on the Ephemeral Rollup.
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+//
+// Private channels (visibility=1) run on the TEE Private ER: all reads go
+// through a token-authenticated connection (session key for players, host
+// key for the host). Round accounts are HOST-ONLY readable — players follow
+// the round through the channel's board-mirror fields and the pools stay
+// hidden until resolve (blind betting).
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
-import { PublicKey } from "@solana/web3.js";
-import { colors, hairline } from "../theme";
+import { LinearGradient } from "expo-linear-gradient";
+import { BN } from "@coral-xyz/anchor";
+import { Connection, Keypair, PublicKey } from "@solana/web3.js";
+import { colors, gradient, hairline, radius } from "../theme";
+import { HostPanel } from "../components/HostPanel";
 import { LiveDot } from "../components/LiveDot";
 import { OddsCards } from "../components/OddsCards";
 import { PTTButton } from "../components/PTTButton";
 import { RoundCard } from "../components/RoundCard";
+import { SettlementCard } from "../components/SettlementCard";
+import { Skeleton } from "../components/Skeleton";
 import { Ticker } from "../components/Ticker";
 import {
+  buildJoinTx,
   claimOnEr,
   decodeChannel,
   decodeRound,
@@ -25,8 +37,21 @@ import {
   type RoundAccount,
 } from "../lib/squawk";
 import { getProgram } from "../lib/program";
-import { baseConn, erConn } from "../lib/connections";
+import { baseConn, erConn, getTeeConnection } from "../lib/connections";
+import { describeError } from "../lib/host";
+import { getHostKeypair } from "../lib/hostKey";
+import { haptic } from "../lib/haptics";
 import { useWallet } from "../hooks/useWallet";
+
+const JOIN_AMOUNT_USDC = 10;
+const MIRROR_STATUS: RoundAccount["status"][] = [
+  "pending",
+  "staking",
+  "locked",
+  "resolvedYes",
+  "resolvedNo",
+  "voided",
+];
 
 export function ChannelScreen() {
   const route = useRoute();
@@ -40,16 +65,52 @@ export function ChannelScreen() {
   const [side, setSide] = useState<"yes" | "no">("yes");
   const [ticker, setTicker] = useState("waiting for the room…");
   const [erTxs, setErTxs] = useState(0);
+  const [hostKey, setHostKey] = useState<Keypair | null>(null);
+  const [privConn, setPrivConn] = useState<Connection | null>(null);
+  const [joinBusy, setJoinBusy] = useState(false);
   const claiming = useRef(false);
   const prevPools = useRef({ yes: 0, no: 0 });
 
+  // hosting is device-bound: the local host burner owns channels created here
+  useEffect(() => {
+    getHostKeypair().then(setHostKey).catch(() => {});
+  }, []);
+  const isHost = !!channel && !!hostKey && channel.host.equals(hostKey.publicKey);
+  const isPrivate = channel?.visibility === 1;
+
+  // private channels: a token-authenticated TEE connection per identity —
+  // host key when hosting, session key otherwise. All ER traffic for the
+  // channel flows through it.
+  useEffect(() => {
+    if (!isPrivate) {
+      setPrivConn(null);
+      return;
+    }
+    const identity = isHost ? hostKey : wallet.sessionKey;
+    if (!identity) return;
+    let stale = false;
+    getTeeConnection(identity)
+      .then((c) => {
+        if (!stale) setPrivConn(c);
+      })
+      .catch(() => {});
+    return () => {
+      stale = true;
+    };
+  }, [isPrivate, isHost, hostKey, wallet.sessionKey]);
+
+  const erSel = isPrivate ? privConn : erConn;
+
   // channel: ER websocket for low-latency updates PLUS a 3s poll (ER first,
   // base fallback) — the ws alone can miss the moment the account is first
-  // cloned into the ER at go_live, and status flips happen on base.
+  // cloned into the ER at go_live, and status flips happen on base. On a
+  // private channel the live board mirror is only readable through the
+  // authed TEE conn; the base clone is the frozen pre-delegation snapshot.
   useEffect(() => {
     let stop = false;
+    const conns = [erSel, baseConn].filter(Boolean) as Connection[];
     const poll = async () => {
-      for (const conn of [erConn, baseConn]) {
+      for (const conn of conns) {
         try {
           const raw = await (getProgram(conn).account as any).channel.fetch(channelPk);
           if (!stop) setChannel(decodeChannel(channelPk, raw));
@@ -59,39 +120,41 @@ export function ChannelScreen() {
     };
     poll();
     const interval = setInterval(poll, 3000);
-    const unsub = subscribeEr(channelPk, "Channel", (raw) =>
-      setChannel(decodeChannel(channelPk, raw))
-    );
+    const unsub = erSel
+      ? subscribeEr(channelPk, "Channel", (raw) => setChannel(decodeChannel(channelPk, raw)), erSel)
+      : () => {};
     return () => {
       stop = true;
       clearInterval(interval);
       unsub();
     };
-  }, []);
+  }, [erSel]);
 
   // round: follow channel.activeRound on the ER. 1s polling is the workhorse
   // (RN's ER websocket delivery is unreliable); the ws sub is a bonus when it
-  // does connect, giving sub-second odds.
+  // does connect. On private channels only the HOST can read Round accounts —
+  // players skip this and synthesize the round from the board mirror below.
   const activeRound = channel?.status === "live" ? channel.activeRound : null;
+  const canReadRound = !isPrivate || isHost;
   useEffect(() => {
-    if (activeRound === null || !channel) return;
+    if (activeRound === null || !channel || !canReadRound || !erSel) return;
     const pda = roundPda(channelPk, activeRound);
     let stop = false;
     const poll = async () => {
       try {
-        const raw = await (getProgram(erConn).account as any).round.fetch(pda);
+        const raw = await (getProgram(erSel).account as any).round.fetch(pda);
         if (!stop) handleRound(decodeRound(raw));
       } catch {}
     };
     poll();
     const interval = setInterval(poll, 1000);
-    const unsub = subscribeEr(pda, "Round", (raw) => handleRound(decodeRound(raw)));
+    const unsub = subscribeEr(pda, "Round", (raw) => handleRound(decodeRound(raw)), erSel);
     return () => {
       stop = true;
       clearInterval(interval);
       unsub();
     };
-  }, [activeRound]);
+  }, [activeRound, canReadRound, erSel]);
 
   const handleRound = (r: RoundAccount) => {
     setRound(r);
@@ -108,13 +171,52 @@ export function ChannelScreen() {
     prevPools.current = { yes, no };
   };
 
-  // member: 2s poll (ER first, base fallback pre-delegation) + ws bonus
+  // private players: the round is synthesized from the channel board mirror
+  // (question, timing, status; pools = the resolve-time reveal, 0 while live)
+  const mirrorRound: RoundAccount | null = useMemo(() => {
+    if (!channel || channel.status !== "live") return null;
+    const status = MIRROR_STATUS[channel.activeRoundStatus] ?? "pending";
+    if (status === "pending") return null;
+    return {
+      question: channel.activeQuestion,
+      status,
+      yesPool: channel.revealYes,
+      noPool: channel.revealNo,
+      opensAt: new BN(0),
+      locksAt: channel.activeLocksAt,
+      roundIndex: channel.activeRound,
+    };
+  }, [channel]);
+
+  const effRound = canReadRound ? round : mirrorRound;
+  const blindNow =
+    isPrivate &&
+    !isHost &&
+    !!effRound &&
+    (effRound.status === "staking" || effRound.status === "locked");
+
+  // ticker for private players (no pool deltas to report while blind)
+  useEffect(() => {
+    if (canReadRound || !mirrorRound) return;
+    if (mirrorRound.status === "staking")
+      setTicker("blind round — stakes hidden until the call");
+    else if (mirrorRound.status === "locked") setTicker("round locked — waiting for the call");
+    else if (mirrorRound.status === "resolvedYes")
+      setTicker(`resolved YES — pools revealed ${(mirrorRound.yesPool.toNumber() / 1e6).toFixed(2)} / ${(mirrorRound.noPool.toNumber() / 1e6).toFixed(2)}`);
+    else if (mirrorRound.status === "resolvedNo")
+      setTicker(`resolved NO — pools revealed ${(mirrorRound.yesPool.toNumber() / 1e6).toFixed(2)} / ${(mirrorRound.noPool.toNumber() / 1e6).toFixed(2)}`);
+    else if (mirrorRound.status === "voided") setTicker("voided — stakes refunded");
+  }, [canReadRound, mirrorRound?.status]);
+
+  // member: 2s poll (ER first, base fallback pre-delegation) + ws bonus.
+  // On a private channel the member account is readable only by its own
+  // session key (+ host) — exactly the identity behind erSel.
   useEffect(() => {
     if (!wallet.publicKey) return;
     let stop = false;
     const pda = memberPda(channelPk, wallet.publicKey);
     const poll = async () => {
-      const m = await fetchMemberOnEr(channelPk, wallet.publicKey!);
+      const m = erSel ? await fetchMemberOnEr(channelPk, wallet.publicKey!, erSel) : null;
       if (!m) {
         try {
           const raw = await (getProgram(baseConn).account as any).member.fetch(pda);
@@ -126,50 +228,111 @@ export function ChannelScreen() {
     };
     poll();
     const interval = setInterval(poll, 2000);
-    const unsub = subscribeEr(pda, "Member", (raw) => setMember(raw as MemberAccount));
+    const unsub = erSel
+      ? subscribeEr(pda, "Member", (raw) => setMember(raw as MemberAccount), erSel)
+      : () => {};
     return () => {
       stop = true;
       clearInterval(interval);
       unsub();
     };
-  }, [wallet.publicKey?.toBase58()]);
+  }, [wallet.publicKey?.toBase58(), erSel]);
 
-  // auto-claim the moment our position's round resolves (free on the ER)
+  // auto-claim the moment our position's round resolves (free on the ER),
+  // with a win/loss/void haptic per outcome
   useEffect(() => {
-    if (!round || !member || !wallet.sessionKey || !wallet.publicKey) return;
-    const resolved = ["resolvedYes", "resolvedNo", "voided"].includes(round.status);
+    if (!effRound || !member || !wallet.sessionKey || !wallet.publicKey) return;
+    const resolved = ["resolvedYes", "resolvedNo", "voided"].includes(effRound.status);
     const hasPosition =
       member.position.amount.toNumber() > 0 &&
-      member.position.roundIndex === round.roundIndex;
+      member.position.roundIndex === effRound.roundIndex;
     if (resolved && hasPosition && !claiming.current) {
       claiming.current = true;
-      claimOnEr(wallet.sessionKey, wallet.publicKey, channelPk, round.roundIndex)
+      const mySide = Object.keys(member.position.side)[0];
+      if (effRound.status === "voided") haptic.warning();
+      else if (
+        (effRound.status === "resolvedYes" && mySide === "yes") ||
+        (effRound.status === "resolvedNo" && mySide === "no")
+      )
+        haptic.success();
+      else haptic.error();
+      claimOnEr(
+        wallet.sessionKey,
+        wallet.publicKey,
+        channelPk,
+        effRound.roundIndex,
+        erSel ?? erConn
+      )
         .then(() => setErTxs((n) => n + 1))
         .catch(() => {})
         .finally(() => (claiming.current = false));
     }
-  }, [round?.status, member?.position.amount.toNumber()]);
+  }, [effRound?.status, member?.position.amount.toNumber()]);
 
   const stake = useCallback(
     async (amount: number) => {
-      if (!wallet.sessionKey || !wallet.publicKey || !channel || round?.status !== "staking")
+      if (!wallet.sessionKey || !wallet.publicKey || !channel || effRound?.status !== "staking")
         return;
+      if (isPrivate && !privConn) return;
       try {
         await stakeOnEr(
           wallet.sessionKey,
           wallet.publicKey,
           channelPk,
-          round.roundIndex,
+          effRound.roundIndex,
           side,
-          amount
+          amount,
+          erSel ?? erConn
         );
         setErTxs((n) => n + 1);
       } catch (e) {
-        setTicker(`stake failed: ${String(e).slice(0, 60)}`);
+        setTicker(`stake failed: ${describeError(e).slice(0, 60)}`);
       }
     },
-    [wallet.sessionKey, wallet.publicKey, channel, round?.roundIndex, round?.status, side]
+    [
+      wallet.sessionKey,
+      wallet.publicKey,
+      channel,
+      effRound?.roundIndex,
+      effRound?.status,
+      side,
+      erSel,
+      isPrivate,
+      privConn,
+    ]
   );
+
+  // join for channels reached by invite code / deep link (Discover joins on
+  // card tap; unlisted private channels never appear there)
+  const join = useCallback(async () => {
+    if (!wallet.ready || !wallet.publicKey || !wallet.sessionKey || !channel) return;
+    setJoinBusy(true);
+    try {
+      const tx = await buildJoinTx(
+        wallet.publicKey,
+        wallet.sessionKey.publicKey,
+        channel,
+        JOIN_AMOUNT_USDC
+      );
+      await wallet.signAndSend(tx);
+      haptic.success();
+      setTicker("joined — waiting for the host to go live");
+    } catch (e) {
+      haptic.error();
+      setTicker(`join failed: ${describeError(e).slice(0, 80)}`);
+    } finally {
+      setJoinBusy(false);
+    }
+  }, [wallet.ready, wallet.publicKey, wallet.sessionKey?.publicKey.toBase58(), channel]);
+
+  const shareInvite = useCallback(() => {
+    Share.share({
+      message:
+        `Join my private Squawk channel 🔒\n` +
+        `squawk://channel/${channelPk.toBase58()}\n` +
+        `invite code: ${channelPk.toBase58()}`,
+    }).catch(() => {});
+  }, [channelPk.toBase58()]);
 
   const balance = member ? member.balance.toNumber() / 1e6 : null;
   const staked =
@@ -177,9 +340,15 @@ export function ChannelScreen() {
       ? member.position.amount.toNumber() / 1e6
       : 0;
   const canStake =
-    !!member && round?.status === "staking" && (balance ?? 0) > 0 && channel?.status === "live";
+    !!member &&
+    effRound?.status === "staking" &&
+    (balance ?? 0) > 0 &&
+    channel?.status === "live" &&
+    (!isPrivate || !!privConn);
 
-  const pool = ((round?.yesPool.toNumber() ?? 0) + (round?.noPool.toNumber() ?? 0)) / 1e6;
+  const pool =
+    ((effRound?.yesPool.toNumber() ?? 0) + (effRound?.noPool.toNumber() ?? 0)) / 1e6;
+  const showJoin = channel?.status === "open" && !member && !isHost && wallet.ready;
 
   return (
     <View style={styles.screen}>
@@ -189,44 +358,97 @@ export function ChannelScreen() {
             <Feather name="chevron-left" size={20} color={colors.textSecondary} />
           </Pressable>
           <View>
-            <Text style={styles.title}>{channel?.title ?? "…"}</Text>
+            <View style={styles.titleRow}>
+              {isPrivate && <Feather name="lock" size={12} color={colors.accent} />}
+              <Text style={styles.title}>{channel?.title ?? "…"}</Text>
+            </View>
             <Text style={styles.subtitle}>
               CH {channel ? channel.channelId.toString().slice(-4) : "…"}
+              {isPrivate ? " · private" : ""}
               {channel && channel.status === "live"
                 ? ` · round ${channel.activeRound + 1}`
                 : ""}
             </Text>
           </View>
         </View>
-        {channel?.status === "live" && (
-          <View style={styles.liveWrap}>
-            <LiveDot />
-            <Text style={styles.liveText}>
-              LIVE · <Text style={{ color: colors.textSecondary }}>{channel.userCount}</Text>
-            </Text>
-          </View>
-        )}
+        <View style={styles.headerRight}>
+          {isPrivate && isHost && (
+            <Pressable onPress={shareInvite} hitSlop={10}>
+              <Feather name="share-2" size={16} color={colors.textSecondary} />
+            </Pressable>
+          )}
+          {channel?.status === "live" && (
+            <View style={styles.liveWrap}>
+              <LiveDot />
+              <Text style={styles.liveText}>
+                LIVE · <Text style={{ color: colors.textSecondary }}>{channel.userCount}</Text>
+              </Text>
+            </View>
+          )}
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        <RoundCard round={round} roundCount={channel?.roundCount ?? 0} />
-        <OddsCards
-          yesPool={(round?.yesPool.toNumber() ?? 0) / 1e6}
-          noPool={(round?.noPool.toNumber() ?? 0) / 1e6}
-          selected={side}
-          onSelect={setSide}
-        />
-        <View style={styles.poolRow}>
-          <Text style={styles.poolText}>Pool {pool.toFixed(2)} USDC</Text>
-          <Text style={styles.poolText}>0 fees on channel</Text>
-        </View>
-        <Ticker message={ticker} />
-        <PTTButton disabled={!canStake} side={side} onStake={stake} />
-        {channel?.status === "open" && (
-          <Text style={styles.waiting}>channel opens when the host goes live…</Text>
-        )}
-        {channel?.status === "closed" && (
-          <Text style={styles.waiting}>channel settled — collect from Profile</Text>
+        {!channel ? (
+          <>
+            <Skeleton height={130} />
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <Skeleton height={92} style={{ flex: 1 }} />
+              <Skeleton height={92} style={{ flex: 1 }} />
+            </View>
+            <Skeleton height={36} />
+          </>
+        ) : channel.status === "closed" ? (
+          <SettlementCard channelPk={channelPk} erTxs={erTxs} />
+        ) : (
+          <>
+            <RoundCard round={effRound} roundCount={channel?.roundCount ?? 0} />
+            <OddsCards
+              yesPool={(effRound?.yesPool.toNumber() ?? 0) / 1e6}
+              noPool={(effRound?.noPool.toNumber() ?? 0) / 1e6}
+              selected={side}
+              onSelect={setSide}
+              hidden={blindNow}
+            />
+            <View style={styles.poolRow}>
+              <Text style={styles.poolText}>
+                {blindNow ? "Pool ••• USDC" : `Pool ${pool.toFixed(2)} USDC`}
+              </Text>
+              <Text style={styles.poolText}>0 fees on channel</Text>
+            </View>
+            <Ticker message={ticker} />
+            {isHost && channel && hostKey && (
+              <HostPanel
+                channel={channel}
+                round={round}
+                hostKey={hostKey}
+                onErTx={(n) => setErTxs((c) => c + n)}
+              />
+            )}
+            <PTTButton disabled={!canStake} side={side} onStake={stake} />
+            {showJoin && (
+              <Pressable onPress={join} disabled={joinBusy}>
+                <LinearGradient
+                  colors={[...gradient]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.joinBtn}
+                >
+                  <Text style={styles.joinText}>
+                    {joinBusy ? "JOINING…" : `JOIN · ${JOIN_AMOUNT_USDC} USDC`}
+                  </Text>
+                </LinearGradient>
+              </Pressable>
+            )}
+            {channel?.status === "open" && !isHost && !showJoin && (
+              <Text style={styles.waiting}>channel opens when the host goes live…</Text>
+            )}
+            {channel?.status === "live" && isPrivate && !member && !isHost && (
+              <Text style={styles.waiting}>
+                🔒 private channel — stakes are hidden, members only
+              </Text>
+            )}
+          </>
         )}
       </ScrollView>
 
@@ -255,6 +477,8 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   headerLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: 12 },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: 5 },
   title: { color: colors.text, fontSize: 14, fontWeight: "600" },
   subtitle: { color: colors.textMuted, fontSize: 11 },
   liveWrap: { flexDirection: "row", alignItems: "center", gap: 5 },
@@ -267,6 +491,12 @@ const styles = StyleSheet.create({
   },
   poolText: { color: colors.textMuted, fontSize: 11 },
   waiting: { color: colors.textSecondary, textAlign: "center", fontSize: 12 },
+  joinBtn: {
+    borderRadius: radius.lg,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  joinText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800", letterSpacing: 1 },
   footer: {
     flexDirection: "row",
     justifyContent: "space-between",

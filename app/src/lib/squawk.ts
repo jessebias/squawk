@@ -32,6 +32,18 @@ export type ChannelAccount = {
   totalPool: BN;
   userCount: number;
   endsAt: BN;
+  /** 0 = public ER, 1 = private (TEE PER, blind betting + unlisted). */
+  visibility: number;
+  /** Board mirror — the active round's display data, readable by all channel
+   * members even when the Round account itself is host-only (private ERs). */
+  activeQuestion: string;
+  activeLocksAt: BN;
+  /** RoundStatus as u8: 0 pending, 1 staking, 2 locked, 3 yes, 4 no, 5 void. */
+  activeRoundStatus: number;
+  revealYes: BN;
+  revealNo: BN;
+  /** 0 none, 1 yes, 2 no, 3 voided. */
+  lastOutcome: number;
 };
 
 export type RoundAccount = {
@@ -72,6 +84,13 @@ export function decodeChannel(pubkey: PublicKey, raw: any): ChannelAccount {
     totalPool: raw.totalPool,
     userCount: raw.userCount,
     endsAt: raw.endsAt,
+    visibility: raw.visibility,
+    activeQuestion: bytesToString(raw.activeQuestion),
+    activeLocksAt: raw.activeLocksAt,
+    activeRoundStatus: raw.activeRoundStatus,
+    revealYes: raw.revealYes,
+    revealNo: raw.revealNo,
+    lastOutcome: raw.lastOutcome,
   };
 }
 
@@ -139,9 +158,13 @@ const normalizeTitle = (t: string) =>
   t.replace(/\p{Extended_Pictographic}/gu, "").trim().toLowerCase();
 
 export async function fetchChannels(): Promise<ChannelAccount[]> {
-  const all = await (programBase.account as any).channel.all();
-  // Visibility = the channel's own on-chain lifetime: open|live AND not past
-  // ends_at, minus any retired demo titles.
+  // dataSize filter skips pre-visibility Channel accounts (older, smaller
+  // layout) that would overrun the decoder — same class of gotcha as Member.
+  const size = (programBase.account as any).channel.size;
+  const all = await (programBase.account as any).channel.all([{ dataSize: size }]);
+  // Discover shows: open|live AND not past ends_at, PUBLIC only (private
+  // channels are unlisted — reached via invite code / deep link), minus any
+  // retired demo titles.
   const now = Math.floor(Date.now() / 1000);
   return all
     .map((c: any) => decodeChannel(c.publicKey, c.account))
@@ -149,9 +172,24 @@ export async function fetchChannels(): Promise<ChannelAccount[]> {
       (c: ChannelAccount) =>
         (c.status === "open" || c.status === "live") &&
         c.endsAt.toNumber() > now &&
+        c.visibility === 0 &&
         !RETIRED_TITLES.has(normalizeTitle(c.title))
     )
     .sort((a: ChannelAccount, b: ChannelAccount) => b.channelId.cmp(a.channelId));
+}
+
+/// Fetch one channel by pubkey from the base layer — the invite-code / deep
+/// link entry point for unlisted private channels (the base-layer snapshot
+/// stays publicly readable, so the join screen works pre-join).
+export async function fetchChannelByPk(
+  pubkey: PublicKey
+): Promise<ChannelAccount | null> {
+  try {
+    const raw = await (programBase.account as any).channel.fetch(pubkey);
+    return decodeChannel(pubkey, raw);
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchMemberships(user: PublicKey): Promise<
@@ -174,10 +212,11 @@ export async function fetchMemberships(user: PublicKey): Promise<
 
 export async function fetchMemberOnEr(
   channel: PublicKey,
-  user: PublicKey
+  user: PublicKey,
+  conn: Connection = erConn
 ): Promise<MemberAccount | null> {
   try {
-    return (await (programER.account as any).member.fetch(
+    return (await (getProgram(conn).account as any).member.fetch(
       memberPda(channel, user)
     )) as MemberAccount;
   } catch {
@@ -260,13 +299,15 @@ export async function sendLocal(
 }
 
 /// Stake on the ER, signed + paid by the session key. ~10ms, $0.00.
+/// Private channels pass their token-authenticated TEE connection.
 export async function stakeOnEr(
   session: Keypair,
   user: PublicKey,
   channel: PublicKey,
   roundIndex: number,
   side: "yes" | "no",
-  amountUsdc: number
+  amountUsdc: number,
+  conn: Connection = erConn
 ): Promise<string> {
   const ix = await programER.methods
     .stake(
@@ -283,8 +324,8 @@ export async function stakeOnEr(
     .instruction();
   const tx = new Transaction().add(ix);
   tx.feePayer = session.publicKey;
-  tx.recentBlockhash = (await erConn.getLatestBlockhash()).blockhash;
-  return sendLocal(erConn, tx, [session]);
+  tx.recentBlockhash = (await conn.getLatestBlockhash()).blockhash;
+  return sendLocal(conn, tx, [session]);
 }
 
 /// Claim a resolved position on the ER (permissionless; session key pays $0).
@@ -292,7 +333,8 @@ export async function claimOnEr(
   session: Keypair,
   user: PublicKey,
   channel: PublicKey,
-  roundIndex: number
+  roundIndex: number,
+  conn: Connection = erConn
 ): Promise<string> {
   const ix = await programER.methods
     .claimRound(roundIndex)
@@ -304,8 +346,8 @@ export async function claimOnEr(
     .instruction();
   const tx = new Transaction().add(ix);
   tx.feePayer = session.publicKey;
-  tx.recentBlockhash = (await erConn.getLatestBlockhash()).blockhash;
-  return sendLocal(erConn, tx, [session]);
+  tx.recentBlockhash = (await conn.getLatestBlockhash()).blockhash;
+  return sendLocal(conn, tx, [session]);
 }
 
 /// Live subscription to a delegated account over the ER websocket.
@@ -313,9 +355,10 @@ export async function claimOnEr(
 export function subscribeEr(
   pubkey: PublicKey,
   accountType: "Channel" | "Round" | "Member",
-  cb: (decoded: any) => void
+  cb: (decoded: any) => void,
+  conn: Connection = erConn
 ): () => void {
-  const id = erConn.onAccountChange(
+  const id = conn.onAccountChange(
     pubkey,
     (info) => {
       try {
@@ -327,7 +370,7 @@ export function subscribeEr(
     "processed"
   );
   return () => {
-    erConn.removeAccountChangeListener(id).catch(() => {});
+    conn.removeAccountChangeListener(id).catch(() => {});
   };
 }
 
