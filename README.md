@@ -8,6 +8,12 @@ Built for [Solana Blitz V6](https://hackathon.magicblock.app/) (mobile theme) wi
 
 > ⚠️ Hackathon build — runs on devnet with mock tokens.
 
+## 📲 Try it — download the APK
+
+**[⬇ Download Squawk.apk (latest release)](https://github.com/jessebias/squawk/releases/latest/download/Squawk.apk)**
+
+Sideload on any Android 7.0+ phone (enable *Install unknown apps* for your browser, then open the file). Universal APK, debug-signed — no Play Store or keystore needed. See the [release notes](https://github.com/jessebias/squawk/releases/latest) for the SHA-256 and a walkthrough.
+
 ## Why Ephemeral Rollups
 
 A 90-minute channel with 20 users and 40 rounds generates thousands of tiny state changes — stakes, odds updates, locks, resolutions. On base Solana that's per-transaction fees and ~400ms latency, which kills the live feel. Instead, the channel's accounts are **delegated to a MagicBlock Ephemeral Rollup for the session** (near-instant, zero-fee transactions) and committed back to Solana in a single settlement when the channel closes:
