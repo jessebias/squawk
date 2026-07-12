@@ -43,7 +43,12 @@ export function AppHeader() {
   const fmt = (v: number | undefined) => (v === undefined ? "—" : v.toFixed(2));
   return (
     <View style={styles.header}>
-      <Text style={styles.wordmark}>SQUAWK</Text>
+      {/* hard orange offset shadow via a stacked orange copy (matches the
+          splash) — crisper than textShadow on Android */}
+      <View>
+        <Text style={[styles.wordmark, styles.wordmarkShadow]}>SQUAWK</Text>
+        <Text style={styles.wordmark}>SQUAWK</Text>
+      </View>
       <View style={styles.headerRight}>
         <View style={styles.balancePill}>
           <View style={styles.dollar}>
@@ -79,9 +84,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.wordmark,
     fontSize: 18,
     color: colors.text,
-    textShadowColor: colors.accent,
-    textShadowOffset: { width: 1.5, height: 1.5 },
-    textShadowRadius: 0,
+  },
+  wordmarkShadow: {
+    position: "absolute",
+    left: 2,
+    top: 2, // hard offset down-right (scaled to the 18px header size)
+    color: colors.accent, // #FF6B2C
   },
   headerRight: { flexDirection: "row", alignItems: "center", gap: 10 },
   balancePill: {
