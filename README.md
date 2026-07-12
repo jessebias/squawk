@@ -60,9 +60,10 @@ npx expo run:android             # builds + installs the dev client, starts Metr
 
 The full lifecycle runs on devnet — not just a happy path in a slide:
 
-- **Program** — the complete channel lifecycle (create → join → delegate → open / stake / lock / resolve / claim → commit + undelegate → withdraw), covered by 19 localnet tests including conservation-of-funds invariants.
+- **Program** — the complete channel lifecycle (create → join → delegate → open / stake / lock / resolve / claim → commit + undelegate → withdraw), covered by 20 localnet tests including conservation-of-funds invariants.
 - **Ephemeral Rollup** — delegation and single-commit settlement proven against the real MagicBlock devnet ER: `scripts/phase3-simulate.ts` runs a 10-round channel end to end — **94 ER transactions → 1 settlement → exact conservation**.
 - **Private channels** — blind betting on the TEE-backed Private ER, proven by `scripts/phase-per-lifecycle.ts` (reads gated at the TEE → blind stakes land → crank lock → reveal → settlement + withdraw).
+- **Trustless price rounds** — a round can resolve against a **Pyth Lazer feed the program reads on-chain, live on the Ephemeral Rollup** — no host referee, no oracle authority, permissionless (`open_price_round` / `resolve_price_round`, feeds whitelisted in-program). `scripts/phase-oracle-lifecycle.ts` proves it on devnet: the program read SOL/USD on the ER and settled the round from the on-chain price. Moment/sports questions ("shot on goal?") use a disclosed host referee since they aren't oracle-resolvable.
 - **Mobile app** — the walkie-talkie UI with hold-to-stake, live odds, session-key signing, in-app hosting, and Privy / Mobile Wallet Adapter login.
 
 

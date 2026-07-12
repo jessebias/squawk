@@ -96,6 +96,19 @@ pub struct Round {
     pub locks_at: i64,
     pub resolves_by: i64,
     pub bump: u8,
+    /// 0 = Host (manual referee), 1 = PythPrice (trustless oracle resolve).
+    /// Manual rounds leave the price fields below zeroed.
+    pub oracle_kind: u8,
+    /// Pyth Lazer feed account this price round resolves against (must be
+    /// whitelisted); zeroed for manual rounds.
+    pub price_feed: Pubkey,
+    /// Target price (raw, exponent -8 to match the feed).
+    pub target_price: i64,
+    /// 0 = Above (`observed >= target` → YES), 1 = Below (`observed < target`).
+    pub price_direction: u8,
+    /// The observed feed price at resolution (0 until resolved) — kept for
+    /// display/proof that the on-chain read decided the outcome.
+    pub resolver_price: i64,
 }
 
 /// The member's single open position, embedded in `Member` (deviation from

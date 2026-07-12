@@ -56,4 +56,12 @@ pub enum SquawkError {
     ChannelNotPrivate,
     #[msg("Account does not belong to this channel")]
     WrongChannel,
+    #[msg("Round is not a Pyth price round")]
+    NotPriceRound,
+    #[msg("Price feed is not whitelisted")]
+    InvalidPriceFeed,
+    #[msg("Price round can only resolve within its window after lock")]
+    PriceRoundWindow,
+    #[msg("Price feed returned no price")]
+    FeedUnavailable,
 }

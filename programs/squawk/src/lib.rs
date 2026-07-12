@@ -19,6 +19,18 @@ use state::*;
 
 declare_id!("4NT1YGUK1YWboAq9pyKLqGsHUQaRwDAi7kpATd6Ynuii");
 
+/// Pyth Lazer price feeds (live on the MagicBlock ER, owned by the Pyth Lazer
+/// program). A price round may only resolve against one of these — a
+/// whitelist that blocks a host from pointing at a spoofed feed. Prices are
+/// `i64` little-endian at byte offset 73, exponent -8.
+const ALLOWED_PRICE_FEEDS: [Pubkey; 3] = [
+    pubkey!("ENYwebBThHzmzwPLAQvCucUTsjyfBSZdD9ViXksS4jPu"), // SOL/USD
+    pubkey!("71wtTRDY8Gxgw56bXFt2oc6qeAbTxzStdNiC425Z51sr"), // BTC/USD
+    pubkey!("5vaYr1hpv8yrSpu8w3K95x22byYxUJCCNCSYJtqVWPvG"), // ETH/USD
+];
+const PYTH_PRICE_OFFSET: usize = 73;
+const PRICE_RESOLVE_WINDOW_SECS: i64 = 60;
+
 #[ephemeral]
 #[program]
 pub mod squawk {
@@ -207,6 +219,11 @@ pub mod squawk {
         round.locks_at = 0;
         round.resolves_by = 0;
         round.bump = ctx.bumps.round;
+        round.oracle_kind = 0;
+        round.price_feed = Pubkey::default();
+        round.target_price = 0;
+        round.price_direction = 0;
+        round.resolver_price = 0;
         ctx.accounts.channel.round_count += 1;
         Ok(())
     }
@@ -449,38 +466,131 @@ pub mod squawk {
             ctx.accounts.channel.status == ChannelStatus::Live,
             SquawkError::ChannelNotLive
         );
-        let round = &mut ctx.accounts.round;
         let now = Clock::get()?.unix_timestamp;
-        let lockable = round.status == RoundStatus::Staking && now >= round.locks_at;
-        require!(
-            round.status == RoundStatus::Locked || lockable,
-            SquawkError::RoundNotResolvable
-        );
-        round.snap_yes = round.yes_pool;
-        round.snap_no = round.no_pool;
-        let winning_pool = match outcome {
-            Side::Yes => round.snap_yes,
-            Side::No => round.snap_no,
-        };
-        round.status = if winning_pool == 0 {
-            RoundStatus::Voided
-        } else {
-            match outcome {
-                Side::Yes => RoundStatus::ResolvedYes,
-                Side::No => RoundStatus::ResolvedNo,
-            }
-        };
-        let channel = &mut ctx.accounts.channel;
-        if channel.active_round == round.round_index {
-            channel.active_round_status = round.status as u8;
-            channel.reveal_yes = round.snap_yes;
-            channel.reveal_no = round.snap_no;
-            channel.last_outcome = match round.status {
-                RoundStatus::ResolvedYes => 1,
-                RoundStatus::ResolvedNo => 2,
-                _ => 3,
-            };
+        {
+            let round = &ctx.accounts.round;
+            let lockable = round.status == RoundStatus::Staking && now >= round.locks_at;
+            require!(
+                round.status == RoundStatus::Locked || lockable,
+                SquawkError::RoundNotResolvable
+            );
         }
+        settle_round(&mut ctx.accounts.round, &mut ctx.accounts.channel, outcome);
+        Ok(())
+    }
+
+    /// Instruction 5b — open a Pyth PRICE round (ER). Same as open_round but
+    /// the outcome resolves trustlessly against a whitelisted Pyth Lazer feed
+    /// instead of a host call. Host-only, Live only.
+    pub fn open_price_round(
+        ctx: Context<OpenRound>,
+        round_index: u16,
+        question: String,
+        locks_at: i64,
+        resolves_by: i64,
+        target_price: i64,
+        price_direction: u8,
+        price_feed: Pubkey,
+    ) -> Result<()> {
+        require!(
+            ctx.accounts.channel.status == ChannelStatus::Live,
+            SquawkError::ChannelNotLive
+        );
+        require!(question.len() <= MAX_QUESTION_LEN, SquawkError::QuestionTooLong);
+        require!(price_direction <= 1, SquawkError::InvalidPriceFeed);
+        require!(
+            ALLOWED_PRICE_FEEDS.contains(&price_feed),
+            SquawkError::InvalidPriceFeed
+        );
+        let now = Clock::get()?.unix_timestamp;
+        require!(
+            locks_at > now && resolves_by > locks_at,
+            SquawkError::InvalidRoundTiming
+        );
+        let round = &mut ctx.accounts.round;
+        require!(round.status == RoundStatus::Pending, SquawkError::RoundNotPending);
+
+        let mut q = [0u8; MAX_QUESTION_LEN];
+        q[..question.len()].copy_from_slice(question.as_bytes());
+        round.question = q;
+        round.status = RoundStatus::Staking;
+        round.opens_at = now;
+        round.locks_at = locks_at;
+        round.resolves_by = resolves_by;
+        round.oracle_kind = 1;
+        round.price_feed = price_feed;
+        round.target_price = target_price;
+        round.price_direction = price_direction;
+        round.resolver_price = 0;
+        let channel = &mut ctx.accounts.channel;
+        channel.active_round = round_index;
+        channel.active_question = q;
+        channel.active_locks_at = locks_at;
+        channel.active_round_status = RoundStatus::Staking as u8;
+        channel.reveal_yes = 0;
+        channel.reveal_no = 0;
+        channel.last_outcome = 0;
+        Ok(())
+    }
+
+    /// Instruction 8b — resolve a price round by reading the Pyth Lazer feed
+    /// live ON THE ER. Permissionless + signerless (crank/anyone can fire it,
+    /// like lock_round): the program itself reads the oracle and derives the
+    /// outcome — no host referee, no oracle authority. Bounded to a 60s window
+    /// after lock so the observed price stays close to the round's close.
+    pub fn resolve_price_round(ctx: Context<ResolvePriceRound>, _round_index: u16) -> Result<()> {
+        require!(
+            ctx.accounts.channel.status == ChannelStatus::Live,
+            SquawkError::ChannelNotLive
+        );
+        let now = Clock::get()?.unix_timestamp;
+        let (target, direction) = {
+            let round = &ctx.accounts.round;
+            require!(round.oracle_kind == 1, SquawkError::NotPriceRound);
+            require_keys_eq!(
+                ctx.accounts.price_feed.key(),
+                round.price_feed,
+                SquawkError::InvalidPriceFeed
+            );
+            let lockable = round.status == RoundStatus::Staking && now >= round.locks_at;
+            require!(
+                round.status == RoundStatus::Locked || lockable,
+                SquawkError::RoundNotResolvable
+            );
+            require!(now >= round.locks_at, SquawkError::PriceRoundWindow);
+            require!(
+                now <= round.locks_at + PRICE_RESOLVE_WINDOW_SECS,
+                SquawkError::PriceRoundWindow
+            );
+            (round.target_price, round.price_direction)
+        };
+
+        // Read the live feed price (i64 LE at offset 73) directly from the
+        // ER-resident feed account — this is the trustless read.
+        let observed = {
+            let data = ctx.accounts.price_feed.try_borrow_data()?;
+            require!(
+                data.len() >= PYTH_PRICE_OFFSET + 8,
+                SquawkError::FeedUnavailable
+            );
+            let mut buf = [0u8; 8];
+            buf.copy_from_slice(&data[PYTH_PRICE_OFFSET..PYTH_PRICE_OFFSET + 8]);
+            i64::from_le_bytes(buf)
+        };
+        require!(observed != 0, SquawkError::FeedUnavailable);
+
+        // direction 0 = Above (>=), 1 = Below (<)
+        let yes_wins = if direction == 0 {
+            observed >= target
+        } else {
+            observed < target
+        };
+        ctx.accounts.round.resolver_price = observed;
+        settle_round(
+            &mut ctx.accounts.round,
+            &mut ctx.accounts.channel,
+            if yes_wins { Side::Yes } else { Side::No },
+        );
         Ok(())
     }
 
@@ -711,6 +821,36 @@ pub mod squawk {
 /// AUTHORITY (may update/close the permission).
 const VIEW_FLAGS: u8 = TX_LOGS_FLAG | TX_BALANCES_FLAG | TX_MESSAGE_FLAG | ACCOUNT_SIGNATURES_FLAG;
 const HOST_PERMISSION_FLAGS: u8 = AUTHORITY_FLAG | VIEW_FLAGS;
+
+/// Shared settlement: snapshot the pools, set the resolved/voided status, and
+/// write the channel board mirror. Used by both host resolve_round and the
+/// trustless resolve_price_round so the two paths settle identically.
+fn settle_round(round: &mut Round, channel: &mut Channel, outcome: Side) {
+    round.snap_yes = round.yes_pool;
+    round.snap_no = round.no_pool;
+    let winning_pool = match outcome {
+        Side::Yes => round.snap_yes,
+        Side::No => round.snap_no,
+    };
+    round.status = if winning_pool == 0 {
+        RoundStatus::Voided
+    } else {
+        match outcome {
+            Side::Yes => RoundStatus::ResolvedYes,
+            Side::No => RoundStatus::ResolvedNo,
+        }
+    };
+    if channel.active_round == round.round_index {
+        channel.active_round_status = round.status as u8;
+        channel.reveal_yes = round.snap_yes;
+        channel.reveal_no = round.snap_no;
+        channel.last_outcome = match round.status {
+            RoundStatus::ResolvedYes => 1,
+            RoundStatus::ResolvedNo => 2,
+            _ => 3,
+        };
+    }
+}
 
 /// Shared guard for the PER permission instructions: the channel must be
 /// private, Live (delegated), and the signer must be its host.
@@ -1038,6 +1178,28 @@ pub struct ResolveRound<'info> {
         bump = round.bump
     )]
     pub round: Account<'info, Round>,
+}
+
+/// Permissionless like LockRound (no signer) plus the Pyth Lazer feed account,
+/// read on the ER. Feed key is verified against round.price_feed in-handler.
+#[derive(Accounts)]
+#[instruction(round_index: u16)]
+pub struct ResolvePriceRound<'info> {
+    #[account(
+        mut,
+        seeds = [b"channel", channel.channel_id.to_le_bytes().as_ref()],
+        bump = channel.bump
+    )]
+    pub channel: Account<'info, Channel>,
+    #[account(
+        mut,
+        seeds = [b"round", channel.key().as_ref(), round_index.to_le_bytes().as_ref()],
+        bump = round.bump
+    )]
+    pub round: Account<'info, Round>,
+    /// CHECK: the Pyth Lazer feed; address checked against round.price_feed and
+    /// read raw (i64 LE @ offset 73). ER-resident, owned by the Pyth program.
+    pub price_feed: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]

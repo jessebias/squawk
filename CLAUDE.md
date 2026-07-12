@@ -69,6 +69,7 @@ npx ts-node scripts/host-demo.ts [rounds] [--auto=<s>]      # drive a live demo 
 npx ts-node scripts/phase2-lifecycle.ts                     # delegation lifecycle proof
 npx ts-node scripts/phase3-simulate.ts                      # 10-round bot simulation
 npx ts-node scripts/phase-per-lifecycle.ts                  # PRIVATE-ER (TEE) blind-betting proof P1–P6
+npx ts-node scripts/phase-oracle-lifecycle.ts               # trustless Pyth price-round proof (on-chain feed read on the ER)
 ```
 
 ## Wallets (app)
@@ -111,8 +112,15 @@ load-bearing; never enable metro package exports globally (docs/decisions.md 202
   private channels need the per-identity token-authed TEE connection
   (`getTeeConnection` — session key for players, host key for hosts). Unlisted on Discover;
   joined via invite code / `squawk://channel/<pk>` deep link.
+- **Trustless price rounds** (docs/decisions.md 2026-07-12): `open_price_round` (host, sets
+  `oracle_kind=1` + target/direction/feed, feed must be in `ALLOWED_PRICE_FEEDS`) and
+  `resolve_price_round` (**permissionless + signerless** like `lock_round`) — the program reads a
+  Pyth Lazer feed **on the ER** (`i64` LE @ offset 73, exponent −8; SOL `ENYweb…4jPu`) and settles
+  via the shared `settle_round` helper, bounded to 60s after lock. No host/oracle authority. Manual
+  `open_round`/`resolve_round` untouched. Proof: `scripts/phase-oracle-lifecycle.ts`.
 - **Any `channel.all()` needs a `dataSize` filter** (like Member): pre-visibility channels
-  have a smaller layout that overruns the decoder.
+  have a smaller layout that overruns the decoder. (Round layout also grew with the price fields —
+  don't `round.all()` without a dataSize filter either.)
 
 ## Demo logistics (bite-you-on-Sunday items)
 

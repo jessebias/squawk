@@ -725,6 +725,51 @@ describe("squawk — phase 1: config, channel, join, withdraw", () => {
         "RoundNotStaking"
       );
     });
+
+    // resolve_price_round reads a live Pyth feed that only exists on the devnet
+    // ER, so it's proven by scripts/phase-oracle-lifecycle.ts. Here on localnet
+    // we cover open_price_round: the feed whitelist + field storage.
+    it("open_price_round rejects a non-whitelisted feed, stores a whitelisted one", async () => {
+      const SOL_FEED = new PublicKey("ENYwebBThHzmzwPLAQvCucUTsjyfBSZdD9ViXksS4jPu");
+      const locksAt = new anchor.BN(Math.floor(Date.now() / 1000) + 30);
+      const resolvesBy = locksAt.addn(60);
+
+      await expectAnchorError(
+        program.methods
+          .openPriceRound(
+            2,
+            "SOL >= $80?",
+            locksAt,
+            resolvesBy,
+            new anchor.BN(8_000_000_000),
+            0,
+            Keypair.generate().publicKey
+          )
+          .accountsPartial({ host: payer.publicKey, channel: channel3, round: roundPda(2) })
+          .rpc(),
+        "InvalidPriceFeed"
+      );
+
+      await program.methods
+        .openPriceRound(
+          2,
+          "SOL >= $80 at close?",
+          locksAt,
+          resolvesBy,
+          new anchor.BN(8_000_000_000),
+          0,
+          SOL_FEED
+        )
+        .accountsPartial({ host: payer.publicKey, channel: channel3, round: roundPda(2) })
+        .rpc();
+
+      const r = await program.account.round.fetch(roundPda(2));
+      expect(r.oracleKind).to.equal(1);
+      expect(r.priceFeed.toBase58()).to.equal(SOL_FEED.toBase58());
+      expect(r.targetPrice.toString()).to.equal("8000000000");
+      expect(r.priceDirection).to.equal(0);
+      expect(r.status).to.deep.equal({ staking: {} });
+    });
   });
 
 });

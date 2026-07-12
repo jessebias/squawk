@@ -2077,6 +2077,114 @@
       ]
     },
     {
+      "name": "open_price_round",
+      "docs": [
+        "Instruction 5b — open a Pyth PRICE round (ER). Same as open_round but",
+        "the outcome resolves trustlessly against a whitelisted Pyth Lazer feed",
+        "instead of a host call. Host-only, Live only."
+      ],
+      "discriminator": [
+        64,
+        232,
+        47,
+        238,
+        177,
+        249,
+        50,
+        184
+      ],
+      "accounts": [
+        {
+          "name": "host",
+          "signer": true,
+          "relations": [
+            "channel"
+          ]
+        },
+        {
+          "name": "channel",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel.channel_id",
+                "account": "Channel"
+              }
+            ]
+          }
+        },
+        {
+          "name": "round",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "arg",
+                "path": "round_index"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "round_index",
+          "type": "u16"
+        },
+        {
+          "name": "question",
+          "type": "string"
+        },
+        {
+          "name": "locks_at",
+          "type": "i64"
+        },
+        {
+          "name": "resolves_by",
+          "type": "i64"
+        },
+        {
+          "name": "target_price",
+          "type": "i64"
+        },
+        {
+          "name": "price_direction",
+          "type": "u8"
+        },
+        {
+          "name": "price_feed",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "open_round",
       "docs": [
         "Instruction 5 — host activates a pre-created round (ER)."
@@ -2204,6 +2312,91 @@
           "type": {
             "vec": "bytes"
           }
+        }
+      ]
+    },
+    {
+      "name": "resolve_price_round",
+      "docs": [
+        "Instruction 8b — resolve a price round by reading the Pyth Lazer feed",
+        "live ON THE ER. Permissionless + signerless (crank/anyone can fire it,",
+        "like lock_round): the program itself reads the oracle and derives the",
+        "outcome — no host referee, no oracle authority. Bounded to a 60s window",
+        "after lock so the observed price stays close to the round's close."
+      ],
+      "discriminator": [
+        241,
+        196,
+        196,
+        168,
+        140,
+        3,
+        109,
+        245
+      ],
+      "accounts": [
+        {
+          "name": "channel",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel.channel_id",
+                "account": "Channel"
+              }
+            ]
+          }
+        },
+        {
+          "name": "round",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "arg",
+                "path": "round_index"
+              }
+            ]
+          }
+        },
+        {
+          "name": "price_feed",
+          "docs": [
+            "read raw (i64 LE @ offset 73). ER-resident, owned by the Pyth program."
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "_round_index",
+          "type": "u16"
         }
       ]
     },
@@ -2907,6 +3100,26 @@
       "code": 6026,
       "name": "WrongChannel",
       "msg": "Account does not belong to this channel"
+    },
+    {
+      "code": 6027,
+      "name": "NotPriceRound",
+      "msg": "Round is not a Pyth price round"
+    },
+    {
+      "code": 6028,
+      "name": "InvalidPriceFeed",
+      "msg": "Price feed is not whitelisted"
+    },
+    {
+      "code": 6029,
+      "name": "PriceRoundWindow",
+      "msg": "Price round can only resolve within its window after lock"
+    },
+    {
+      "code": 6030,
+      "name": "FeedUnavailable",
+      "msg": "Price feed returned no price"
     }
   ],
   "types": [
@@ -3233,6 +3446,44 @@
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "oracle_kind",
+            "docs": [
+              "0 = Host (manual referee), 1 = PythPrice (trustless oracle resolve).",
+              "Manual rounds leave the price fields below zeroed."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "price_feed",
+            "docs": [
+              "Pyth Lazer feed account this price round resolves against (must be",
+              "whitelisted); zeroed for manual rounds."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "target_price",
+            "docs": [
+              "Target price (raw, exponent -8 to match the feed)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "price_direction",
+            "docs": [
+              "0 = Above (`observed >= target` → YES), 1 = Below (`observed < target`)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "resolver_price",
+            "docs": [
+              "The observed feed price at resolution (0 until resolved) — kept for",
+              "display/proof that the on-chain read decided the outcome."
+            ],
+            "type": "i64"
           }
         ]
       }

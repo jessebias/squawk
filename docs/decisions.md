@@ -382,6 +382,33 @@ Newest at the bottom. Format: date · decision · why.
   button remains as the fallback. All "Seeker" labels renamed to "Wallet" (mode chip
   SEEKER → WALLET; it's MWA, not Seeker-specific).
 
+## 2026-07-12 — Trustless price rounds: on-chain Pyth read on the ER
+
+- **Closes the "centralized resolution" gap** (peer projects EPOCH/Eclipse resolve price markets
+  from Pyth; Squawk was host-refereed). A round can now resolve against a **Pyth Lazer feed the
+  program reads on-chain, live on the ER** — strictly more trustless than Eclipse (oracle signer)
+  or EPOCH (crank fetch): no host, no oracle authority, permissionless.
+- **Key de-risking finding:** the SOL/USD feed `ENYwebBThHzmzwPLAQvCucUTsjyfBSZdD9ViXksS4jPu`
+  (owned by Pyth Lazer `PriCems5…`, exponent −8, price = `i64` LE at **offset 73**) is live on our
+  exact ER (`devnet-as`) and delegated (base shows the delegation program). The in-transaction read
+  of that foreign, non-delegated account **works on the ER** — proven live, not assumed.
+- **Instructions (additive; manual path byte-for-byte untouched):** `open_price_round` (host-only,
+  like `open_round` but validates `price_feed ∈ ALLOWED_PRICE_FEEDS`, stores target/direction/feed,
+  sets `oracle_kind=1`) and `resolve_price_round` (**permissionless + signerless** like `lock_round`;
+  reads the feed @73, `yes_wins = dir==Above ? observed>=target : observed<target`, then the shared
+  `settle_round` helper). Round gained `oracle_kind/price_feed/target_price/price_direction/resolver_price`.
+- **Safety:** feed **whitelist** (SOL/BTC/ETH consts) blocks a spoofed feed; resolve is bounded to
+  `[locks_at, locks_at+60s]` so the observed price stays near close; can't fire before `locks_at`.
+  `resolve_round` refactored to share `settle_round` with the price path (identical settlement).
+- **Scope:** program + `scripts/phase-oracle-lifecycle.ts` + docs only; **no in-app UI** (deferred —
+  recover visibility via README + demo video). Redeploy `4NT1YGUK…` + IDL upgrade (grew to 6740B,
+  upgraded in place). Manual/private paths regression-clean (`phase3-simulate`: 93 ER txs, exact
+  conservation). Devnet proof: program read SOL $77.15 vs target $76.66 → resolvedYes, settled,
+  withdrawn (commitment `5m47D8…xAF9n`).
+- **Honest framing:** moment/sports questions ("shot on goal?") stay host-refereed (not
+  oracle-resolvable); price rounds are the trustless path. Trust reduces to Pyth's feed, same as any
+  oracle consumer.
+
 ## Open questions (Phase 5)
 
 - MWA connect flow on a physical device (Solflare/Phantom) as the flagship join path for the
