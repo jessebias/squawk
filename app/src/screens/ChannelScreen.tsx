@@ -13,14 +13,15 @@ import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { BN } from "@coral-xyz/anchor";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
-import { colors, gradient, hairline, radius } from "../theme";
+import { colors, fonts, gradient, hairline, radius } from "../theme";
+import { FrequencyDisplay } from "../components/FrequencyDisplay";
+import { HandsetFrame } from "../components/HandsetFrame";
 import { HostPanel } from "../components/HostPanel";
-import { LiveDot } from "../components/LiveDot";
 import { OddsCards } from "../components/OddsCards";
 import { PTTButton } from "../components/PTTButton";
-import { RoundCard } from "../components/RoundCard";
 import { SettlementCard } from "../components/SettlementCard";
 import { Skeleton } from "../components/Skeleton";
+import { SpeakerGrille } from "../components/SpeakerGrille";
 import { Ticker } from "../components/Ticker";
 import {
   buildJoinTx,
@@ -68,6 +69,7 @@ export function ChannelScreen() {
   const [hostKey, setHostKey] = useState<Keypair | null>(null);
   const [privConn, setPrivConn] = useState<Connection | null>(null);
   const [joinBusy, setJoinBusy] = useState(false);
+  const [transmitting, setTransmitting] = useState(false);
   const claiming = useRef(false);
   const prevPools = useRef({ yes: 0, no: 0 });
 
@@ -286,7 +288,14 @@ export function ChannelScreen() {
         );
         setErTxs((n) => n + 1);
       } catch (e) {
-        setTicker(`stake failed: ${describeError(e).slice(0, 60)}`);
+        const msg = describeError(e);
+        // 6013 RoundNotStaking / 6014 RoundLockPassed — racing the lock is
+        // normal near the buzzer; don't show a scary error code for it
+        setTicker(
+          /6013|6014|RoundNotStaking|RoundLockPassed/.test(msg)
+            ? "too late — round locked"
+            : `stake failed: ${msg.slice(0, 60)}`
+        );
       }
     },
     [
@@ -357,41 +366,22 @@ export function ChannelScreen() {
           <Pressable onPress={() => nav.goBack()} hitSlop={12}>
             <Feather name="chevron-left" size={20} color={colors.textSecondary} />
           </Pressable>
-          <View>
-            <View style={styles.titleRow}>
-              {isPrivate && <Feather name="lock" size={12} color={colors.accent} />}
-              <Text style={styles.title}>{channel?.title ?? "…"}</Text>
-            </View>
-            <Text style={styles.subtitle}>
-              CH {channel ? channel.channelId.toString().slice(-4) : "…"}
-              {isPrivate ? " · private" : ""}
-              {channel && channel.status === "live"
-                ? ` · round ${channel.activeRound + 1}`
-                : ""}
-            </Text>
+          <View style={styles.titleRow}>
+            {isPrivate && <Feather name="lock" size={12} color={colors.accent} />}
+            <Text style={styles.title}>{channel?.title ?? "…"}</Text>
           </View>
         </View>
-        <View style={styles.headerRight}>
-          {isPrivate && isHost && (
-            <Pressable onPress={shareInvite} hitSlop={10}>
-              <Feather name="share-2" size={16} color={colors.textSecondary} />
-            </Pressable>
-          )}
-          {channel?.status === "live" && (
-            <View style={styles.liveWrap}>
-              <LiveDot />
-              <Text style={styles.liveText}>
-                LIVE · <Text style={{ color: colors.textSecondary }}>{channel.userCount}</Text>
-              </Text>
-            </View>
-          )}
-        </View>
+        {isPrivate && isHost && (
+          <Pressable onPress={shareInvite} hitSlop={10}>
+            <Feather name="share-2" size={16} color={colors.textSecondary} />
+          </Pressable>
+        )}
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
         {!channel ? (
           <>
-            <Skeleton height={130} />
+            <Skeleton height={170} style={{ borderRadius: 28 }} />
             <View style={{ flexDirection: "row", gap: 10 }}>
               <Skeleton height={92} style={{ flex: 1 }} />
               <Skeleton height={92} style={{ flex: 1 }} />
@@ -401,8 +391,24 @@ export function ChannelScreen() {
         ) : channel.status === "closed" ? (
           <SettlementCard channelPk={channelPk} erTxs={erTxs} />
         ) : (
-          <>
-            <RoundCard round={effRound} roundCount={channel?.roundCount ?? 0} />
+          <HandsetFrame live={channel.status === "live"} isPrivate={isPrivate}>
+            <Text style={styles.statusReadout}>
+              {channel.status === "live"
+                ? `STATUS: LIVE · ${channel.userCount} CONNECTED`
+                : `STATUS: OPEN · ${channel.userCount} JOINED`}
+              {isPrivate ? " · ENCRYPTED" : ""}
+            </Text>
+            <FrequencyDisplay
+              round={effRound}
+              channel={channel}
+              roundCount={channel.roundCount}
+              transmitting={transmitting}
+              blind={blindNow}
+            />
+            <SpeakerGrille
+              active={effRound?.status === "staking"}
+              transmitting={transmitting}
+            />
             <OddsCards
               yesPool={(effRound?.yesPool.toNumber() ?? 0) / 1e6}
               noPool={(effRound?.noPool.toNumber() ?? 0) / 1e6}
@@ -412,12 +418,12 @@ export function ChannelScreen() {
             />
             <View style={styles.poolRow}>
               <Text style={styles.poolText}>
-                {blindNow ? "Pool ••• USDC" : `Pool ${pool.toFixed(2)} USDC`}
+                {blindNow ? "POOL ••• USDC" : `POOL ${pool.toFixed(2)} USDC`}
               </Text>
-              <Text style={styles.poolText}>0 fees on channel</Text>
+              <Text style={styles.poolText}>0 FEES ON CHANNEL</Text>
             </View>
             <Ticker message={ticker} />
-            {isHost && channel && hostKey && (
+            {isHost && hostKey && (
               <HostPanel
                 channel={channel}
                 round={round}
@@ -425,7 +431,16 @@ export function ChannelScreen() {
                 onErTx={(n) => setErTxs((c) => c + n)}
               />
             )}
-            <PTTButton disabled={!canStake} side={side} onStake={stake} />
+            <PTTButton
+              disabled={!canStake}
+              side={side}
+              onStake={stake}
+              onHoldChange={setTransmitting}
+            />
+            <Text style={styles.connReadout}>
+              ● {channel.userCount} connected ·{" "}
+              {transmitting ? "TRANSMITTING" : "no transmission"}
+            </Text>
             {showJoin && (
               <Pressable onPress={join} disabled={joinBusy}>
                 <LinearGradient
@@ -440,15 +455,15 @@ export function ChannelScreen() {
                 </LinearGradient>
               </Pressable>
             )}
-            {channel?.status === "open" && !isHost && !showJoin && (
+            {channel.status === "open" && !isHost && !showJoin && (
               <Text style={styles.waiting}>channel opens when the host goes live…</Text>
             )}
-            {channel?.status === "live" && isPrivate && !member && !isHost && (
+            {channel.status === "live" && isPrivate && !member && !isHost && (
               <Text style={styles.waiting}>
                 🔒 private channel — stakes are hidden, members only
               </Text>
             )}
-          </>
+          </HandsetFrame>
         )}
       </ScrollView>
 
@@ -477,19 +492,34 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   headerLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
-  headerRight: { flexDirection: "row", alignItems: "center", gap: 12 },
   titleRow: { flexDirection: "row", alignItems: "center", gap: 5 },
   title: { color: colors.text, fontSize: 14, fontWeight: "600" },
-  subtitle: { color: colors.textMuted, fontSize: 11 },
-  liveWrap: { flexDirection: "row", alignItems: "center", gap: 5 },
-  liveText: { color: colors.live, fontSize: 11, letterSpacing: 1, fontWeight: "600" },
-  content: { paddingHorizontal: 16, gap: 12, paddingBottom: 16 },
+  content: { paddingHorizontal: 14, gap: 12, paddingBottom: 16 },
+  statusReadout: {
+    fontFamily: fonts.lcdMed,
+    fontSize: 10,
+    color: colors.textSecondary,
+    letterSpacing: 1.5,
+    textAlign: "center",
+  },
+  connReadout: {
+    fontFamily: fonts.lcdMed,
+    fontSize: 10,
+    color: colors.textMuted,
+    letterSpacing: 1,
+    textAlign: "center",
+  },
   poolRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     paddingHorizontal: 4,
   },
-  poolText: { color: colors.textMuted, fontSize: 11 },
+  poolText: {
+    fontFamily: fonts.lcdMed,
+    color: colors.textMuted,
+    fontSize: 9,
+    letterSpacing: 1,
+  },
   waiting: { color: colors.textSecondary, textAlign: "center", fontSize: 12 },
   joinBtn: {
     borderRadius: radius.lg,

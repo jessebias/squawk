@@ -22,6 +22,13 @@ export const colors = {
   no: "#A34040",
   noText: "#F09595",
   noTint: "#2A1414",
+  // walkie-talkie handset (Channel screen device chrome)
+  body: "#0E0E12", // handset body
+  bodyEdge: "#2E2E38", // bezel highlight border
+  lcd: "#08080A", // inset LCD panel
+  lcdText: "#FF7A33", // lit segments
+  lcdDim: "rgba(255,122,51,0.16)", // unlit-segment ghost
+  lcdGlow: "#FF6B2C",
 } as const;
 
 /// Orange→amber gradient for primary CTAs (start left, end right).
@@ -39,4 +46,6 @@ export const hairline = StyleSheet.hairlineWidth;
 
 export const fonts = {
   wordmark: "Bungee_400Regular", // via @expo-google-fonts/bungee + expo-font
+  lcd: "Orbitron_700Bold", // digital LCD digits (walkie readout)
+  lcdMed: "Orbitron_500Medium",
 } as const;

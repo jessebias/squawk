@@ -158,7 +158,7 @@ export function CreateChannelScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Create channel</Text>
+        <Text style={styles.headerTitle}>Open a frequency</Text>
         <Pressable onPress={() => nav.goBack()} hitSlop={12} disabled={busy}>
           <Feather name="x" size={20} color={colors.textSecondary} />
         </Pressable>
@@ -253,7 +253,7 @@ export function CreateChannelScreen() {
           </LinearGradient>
         </Pressable>
         <Text style={styles.footnote}>
-          on-chain on devnet · joins open the moment it's created
+          on-chain on devnet · your frequency goes on air the moment it's created
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>

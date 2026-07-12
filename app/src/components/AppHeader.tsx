@@ -43,17 +43,7 @@ export function AppHeader() {
   const fmt = (v: number | undefined) => (v === undefined ? "—" : v.toFixed(2));
   return (
     <View style={styles.header}>
-      <View style={styles.brandRow}>
-        <LinearGradient
-          colors={[...gradient]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.logoTile}
-        >
-          <Feather name="mic" size={13} color="#FFFFFF" />
-        </LinearGradient>
-        <Text style={styles.wordmark}>SQUAWK</Text>
-      </View>
+      <Text style={styles.wordmark}>SQUAWK</Text>
       <View style={styles.headerRight}>
         <View style={styles.balancePill}>
           <View style={styles.dollar}>
@@ -85,14 +75,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 14,
   },
-  brandRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  logoTile: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   wordmark: {
     fontFamily: fonts.wordmark,
     fontSize: 18,
@@ -106,7 +88,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: colors.card,
+    backgroundColor: colors.lcd,
     borderWidth: hairline,
     borderColor: colors.border,
     borderRadius: radius.pill,
@@ -123,8 +105,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   dollarText: { color: "#E1F5EE", fontSize: 9, fontWeight: "700" },
-  balanceText: { color: colors.text, fontSize: 12, fontWeight: "600" },
-  balanceTotal: { color: colors.textMuted, fontWeight: "500" },
+  balanceText: { fontFamily: fonts.lcdMed, color: colors.lcdText, fontSize: 11 },
+  balanceTotal: { color: colors.lcdText, opacity: 0.5 },
   plusChip: {
     width: 20,
     height: 20,

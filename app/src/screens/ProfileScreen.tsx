@@ -52,13 +52,15 @@ export function ProfileScreen() {
   const [collecting, setCollecting] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
 
-  const connectSeeker = async () => {
+  // fallback entry point when Privy is disabled (the LoginModal — which owns
+  // Connect Wallet otherwise — needs the PrivyProvider to mount)
+  const connectWalletStandalone = async () => {
     try {
       await wallet.connectMwa();
     } catch (e) {
       Alert.alert(
         "No wallet app found",
-        `Is a Seed Vault / MWA wallet installed on this device?\n${String(e).slice(0, 100)}`
+        `Is a Solana wallet installed on this device?\n${String(e).slice(0, 100)}`
       );
     }
   };
@@ -165,7 +167,7 @@ export function ProfileScreen() {
           <Text style={styles.cardTitle}>Account</Text>
           <View style={styles.modeChip}>
             <Text style={styles.modeChipText}>
-              {wallet.mode === "privy" ? "PRIVY" : wallet.mode === "mwa" ? "SEEKER" : "BURNER"}
+              {wallet.mode === "privy" ? "PRIVY" : wallet.mode === "mwa" ? "WALLET" : "BURNER"}
             </Text>
           </View>
         </View>
@@ -199,18 +201,18 @@ export function ProfileScreen() {
         {wallet.mwaConnected ? (
           <View style={styles.identityRow}>
             <Text style={styles.identityText}>
-              Seeker · {wallet.publicKey && wallet.mode === "mwa" ? short(wallet.publicKey.toBase58()) : "connected"}
+              Wallet · {wallet.publicKey && wallet.mode === "mwa" ? short(wallet.publicKey.toBase58()) : "connected"}
             </Text>
             <Pressable onPress={() => wallet.disconnectMwa()}>
               <Text style={styles.linkText}>Disconnect</Text>
             </Pressable>
           </View>
-        ) : (
-          <Pressable style={styles.mwaBtn} onPress={connectSeeker}>
+        ) : !privyEnabled ? (
+          <Pressable style={styles.mwaBtn} onPress={connectWalletStandalone}>
             <Feather name="link" size={14} color={colors.text} />
-            <Text style={styles.mwaBtnText}>Connect Seeker wallet</Text>
+            <Text style={styles.mwaBtnText}>Connect Wallet</Text>
           </Pressable>
-        )}
+        ) : null}
       </View>
 
       <View style={styles.analytics}>
@@ -323,7 +325,11 @@ export function ProfileScreen() {
       )}
 
       {privyEnabled && (
-        <LoginModal visible={loginOpen} onClose={() => setLoginOpen(false)} />
+        <LoginModal
+          visible={loginOpen}
+          onClose={() => setLoginOpen(false)}
+          onConnectWallet={() => wallet.connectMwa()}
+        />
       )}
     </ScrollView>
   );

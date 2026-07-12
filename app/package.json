@@ -15,6 +15,7 @@
     "@coral-xyz/anchor": "0.32.1",
     "@ethersproject/shims": "^5.8.0",
     "@expo-google-fonts/bungee": "^0.4.1",
+    "@expo-google-fonts/orbitron": "^0.4.2",
     "@expo/vector-icons": "~14.0.4",
     "@magicblock-labs/ephemeral-rollups-sdk": "0.14.3",
     "@privy-io/expo": "^0.70.1",

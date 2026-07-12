@@ -1,6 +1,7 @@
 // Privy login bottom sheet (daremarket reference, Squawk theme):
 // wordmark → "Log in or sign up" → email + Submit (→ OTP code step) →
-// Twitter / Discord rows → "Protected by Privy" footer.
+// Twitter / Telegram rows → Connect Wallet (MWA, via onConnectWallet) →
+// "Protected by Privy" footer.
 // Only mount when privyEnabled (hooks require PrivyProvider).
 import React, { useState } from "react";
 import {
@@ -16,12 +17,18 @@ import { Feather, FontAwesome6 } from "@expo/vector-icons";
 import { useLoginWithEmail, useLoginWithOAuth } from "@privy-io/expo";
 import { colors, fonts, hairline, radius } from "../theme";
 
-type Props = { visible: boolean; onClose: () => void };
+type Props = {
+  visible: boolean;
+  onClose: () => void;
+  /** Connect an external wallet (MWA) instead of a Privy login. */
+  onConnectWallet?: () => Promise<void>;
+};
 
-export function LoginModal({ visible, onClose }: Props) {
+export function LoginModal({ visible, onClose, onConnectWallet }: Props) {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
 
   const emailFlow = useLoginWithEmail({
     onLoginSuccess: () => onClose(),
@@ -38,7 +45,24 @@ export function LoginModal({ visible, onClose }: Props) {
   const busy =
     emailFlow.state.status === "sending-code" ||
     emailFlow.state.status === "submitting-code" ||
-    oauth.state.status === "loading";
+    oauth.state.status === "loading" ||
+    connecting;
+
+  const connectWallet = async () => {
+    if (!onConnectWallet) return;
+    setError(null);
+    setConnecting(true);
+    try {
+      await onConnectWallet();
+      onClose();
+    } catch (e) {
+      setError(
+        `wallet connect failed — is a Solana wallet installed? ${String(e).slice(0, 80)}`
+      );
+    } finally {
+      setConnecting(false);
+    }
+  };
 
   const submitEmail = async () => {
     setError(null);
@@ -133,6 +157,18 @@ export function LoginModal({ visible, onClose }: Props) {
             "Telegram",
             "telegram",
             <FontAwesome6 name="telegram" size={17} color="#FFFFFF" />
+          )}
+          {onConnectWallet && (
+            <Pressable style={styles.socialRow} disabled={busy} onPress={connectWallet}>
+              <View style={styles.socialIcon}>
+                {connecting ? (
+                  <ActivityIndicator size="small" color={colors.accent} />
+                ) : (
+                  <FontAwesome6 name="wallet" size={14} color="#FFFFFF" />
+                )}
+              </View>
+              <Text style={styles.socialLabel}>Connect Wallet</Text>
+            </Pressable>
           )}
 
           {error && <Text style={styles.error}>{error}</Text>}

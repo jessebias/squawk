@@ -14,7 +14,7 @@ import {
   View,
   ViewStyle,
 } from "react-native";
-import { colors, hairline } from "../theme";
+import { colors, fonts, hairline } from "../theme";
 import { LiveDot } from "./LiveDot";
 
 const SPEED_PX_PER_S = 40;
@@ -86,6 +86,11 @@ export function ActivityTicker({ items, style }: Props) {
         />
         <Strip entries={entries} />
       </Animated.View>
+      {/* fixed scanner-status cell over the strip's left edge */}
+      <View style={styles.scanCap}>
+        <LiveDot size={5} />
+        <Text style={styles.scanText}>SCAN</Text>
+      </View>
     </View>
   );
 }
@@ -95,13 +100,33 @@ const styles = StyleSheet.create({
     borderTopWidth: hairline,
     borderBottomWidth: hairline,
     borderColor: colors.border,
-    backgroundColor: colors.background,
+    backgroundColor: colors.lcd,
     overflow: "hidden",
   },
   row: { flexDirection: "row" },
   strip: { flexDirection: "row", alignItems: "center", paddingVertical: 9 },
   item: { flexDirection: "row", alignItems: "center", gap: 6, paddingLeft: 12 },
-  text: { color: colors.text, fontSize: 11, fontWeight: "600" },
-  meta: { color: colors.textMuted, fontWeight: "500" },
-  sep: { color: colors.textMuted, fontSize: 11, paddingLeft: 12 },
+  text: { fontFamily: fonts.lcdMed, color: colors.lcdText, fontSize: 10 },
+  meta: { color: colors.lcdText, opacity: 0.55 },
+  sep: { color: colors.lcdDim, fontSize: 11, paddingLeft: 12 },
+  scanCap: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingLeft: 12,
+    paddingRight: 10,
+    backgroundColor: colors.lcd,
+    borderRightWidth: hairline,
+    borderRightColor: colors.lcdDim,
+  },
+  scanText: {
+    fontFamily: fonts.lcdMed,
+    fontSize: 9,
+    color: colors.lcdText,
+    letterSpacing: 2,
+  },
 });

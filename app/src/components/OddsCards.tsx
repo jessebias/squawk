@@ -1,8 +1,8 @@
-// Compact YES/NO cards per the mockup: label + big percentage; the selected
-// side gets its tint background and a 1px colored border.
-// `hidden` = private-channel blind mode: the pools are unreadable on the TEE
-// while the round is staking, so both cards show "?" — the side selection
-// still works (that's the blind bet).
+// YES/NO as hardware buttons on the walkie's device face: beveled edges,
+// an LED indicator that lights when the side is selected, pressed-in inset
+// on the selected side. `hidden` = private-channel blind mode: the pools are
+// unreadable on the TEE while the round is staking, so both cards show "?" —
+// the side selection still works (that's the blind bet).
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
@@ -36,11 +36,21 @@ export function OddsCards({ yesPool, noPool, selected, onSelect, hidden }: Props
         style={[
           styles.card,
           on
-            ? { backgroundColor: tint, borderColor: border, borderWidth: 1 }
-            : { backgroundColor: colors.card, borderColor: colors.border, borderWidth: hairline },
+            ? { backgroundColor: tint, borderColor: border, ...styles.cardPressed }
+            : { backgroundColor: colors.cardElevated, borderColor: colors.bodyEdge },
         ]}
       >
-        <Text style={[styles.side, { color: labelColor }]}>{side.toUpperCase()}</Text>
+        <View style={styles.ledRow}>
+          <View
+            style={[
+              styles.led,
+              on
+                ? { backgroundColor: labelColor, shadowColor: labelColor }
+                : styles.ledOff,
+            ]}
+          />
+          <Text style={[styles.side, { color: labelColor }]}>{side.toUpperCase()}</Text>
+        </View>
         <Text style={styles.pct}>{hidden ? "?" : `${pct}%`}</Text>
         <Text style={styles.pool}>
           {hidden ? "hidden until the call" : total === 0 ? "no stakes yet" : pool.toFixed(2)}
@@ -70,11 +80,31 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", gap: 10 },
   card: {
     flex: 1,
-    borderRadius: radius.lg,
-    paddingVertical: 14,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    // raised hardware button: light top edge, dark bottom edge
+    borderTopColor: "#3A3A46",
+    borderBottomColor: "#101014",
+    paddingVertical: 13,
     alignItems: "center",
     gap: 2,
   },
+  cardPressed: {
+    // pressed-in: highlight flips to the bottom edge
+    borderTopColor: "#101014",
+    borderBottomColor: "#3A3A46",
+  },
+  ledRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  led: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    shadowOpacity: 0.9,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 3,
+  },
+  ledOff: { backgroundColor: colors.border },
   side: { fontSize: 11, fontWeight: "700", letterSpacing: 1 },
   pct: { fontSize: 26, fontWeight: "800", color: colors.text },
   pool: { fontSize: 10, color: colors.textMuted },
