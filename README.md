@@ -56,17 +56,16 @@ export JAVA_HOME=<jdk-17> ANDROID_HOME=~/Library/Android/sdk
 npx expo run:android             # builds + installs the dev client, starts Metro
 ```
 
-## Status
+## What's built
 
-- [x] Phase 0 — repo bootstrap (Anchor + Expo scaffolds verified end to end)
-- [x] Phase 1 — program skeleton: channels, deposits, withdrawals (19 localnet tests)
-- [x] Phase 2 — ER delegation lifecycle, accepted on devnet (`scripts/phase2-lifecycle.ts`)
-- [x] Phase 3 — round engine: stake / crank lock / resolve / claim (`scripts/phase3-simulate.ts`: 94 ER txs · 1 settlement · exact conservation)
-- [x] Phase 4 — mobile app: walkie-talkie UI, session keys, live odds, in-app hosting, Privy/MWA login
-- [x] Phase 5 — private channels on the TEE Private ER (`scripts/phase-per-lifecycle.ts`), polish
-- [ ] Demo video + submission
+The full lifecycle runs on devnet — not just a happy path in a slide:
 
-Deployed devnet program: `4NT1YGUK1YWboAq9pyKLqGsHUQaRwDAi7kpATd6Ynuii`
+- **Program** — the complete channel lifecycle (create → join → delegate → open / stake / lock / resolve / claim → commit + undelegate → withdraw), covered by 19 localnet tests including conservation-of-funds invariants.
+- **Ephemeral Rollup** — delegation and single-commit settlement proven against the real MagicBlock devnet ER: `scripts/phase3-simulate.ts` runs a 10-round channel end to end — **94 ER transactions → 1 settlement → exact conservation**.
+- **Private channels** — blind betting on the TEE-backed Private ER, proven by `scripts/phase-per-lifecycle.ts` (reads gated at the TEE → blind stakes land → crank lock → reveal → settlement + withdraw).
+- **Mobile app** — the walkie-talkie UI with hold-to-stake, live odds, session-key signing, in-app hosting, and Privy / Mobile Wallet Adapter login.
+
+**On-chain proof:** program [`4NT1YGUK…Td6Ynuii`](https://explorer.solana.com/address/4NT1YGUK1YWboAq9pyKLqGsHUQaRwDAi7kpATd6Ynuii?cluster=devnet) · [example settlement commitment](https://explorer.solana.com/tx/4x2Kt2TP7Ks7xXQSN8wt7Bwii3mXtXiH8yu3pBfgJBUcT5hCv2ZtQHUK2y4BGx5eCd34Gnpkqg84G1qXWW2SGEz3?cluster=devnet) (a private-channel session collapsed to one commit).
 
 ## Demo (2 minutes)
 
