@@ -118,7 +118,7 @@ async function main(): Promise<void> {
   const endsAt = new anchor.BN(Math.floor(Date.now() / 1000) + 7200);
 
   await program.methods
-    .createChannel(channelId, "Phase 2 Lifecycle", endsAt)
+    .createChannel(channelId, "Phase 2 Lifecycle", endsAt, 0)
     .accountsPartial({ host: payer.publicKey, config: configPda, usdcMint, channel: channelPda, vault })
     .rpc();
   ok(`channel ${channelPda.toBase58()} (id ${channelId.toString()})`);
@@ -144,11 +144,11 @@ async function main(): Promise<void> {
     .accountsPartial({ host: payer.publicKey, channel: channelPda })
     .rpc();
   await program.methods
-    .delegateChannel(channelId)
+    .delegateChannel(channelId, null)
     .accountsPartial({ payer: payer.publicKey, channel: channelPda })
     .rpc({ skipPreflight: true });
   await program.methods
-    .delegateMember(channelId, payer.publicKey)
+    .delegateMember(channelId, payer.publicKey, null)
     .accountsPartial({ payer: payer.publicKey, channel: channelPda, member: memberPda })
     .rpc({ skipPreflight: true });
   ok("delegation transactions sent");

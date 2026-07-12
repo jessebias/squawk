@@ -50,4 +50,10 @@ pub enum SquawkError {
     NothingToClaim,
     #[msg("Position belongs to a different round")]
     WrongRound,
+    #[msg("Visibility must be 0 (public) or 1 (private)")]
+    InvalidVisibility,
+    #[msg("Channel is not private")]
+    ChannelNotPrivate,
+    #[msg("Account does not belong to this channel")]
+    WrongChannel,
 }

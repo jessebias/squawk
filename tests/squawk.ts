@@ -93,7 +93,7 @@ describe("squawk — phase 1: config, channel, join, withdraw", () => {
   it("creates a channel with an empty vault", async () => {
     const endsAt = new anchor.BN(Math.floor(Date.now() / 1000) + 3600);
     await program.methods
-      .createChannel(CHANNEL_ID, "Demo Channel", endsAt)
+      .createChannel(CHANNEL_ID, "Demo Channel", endsAt, 0)
       .accountsPartial({
         host: payer.publicKey,
         config: configPda,
@@ -111,7 +111,48 @@ describe("squawk — phase 1: config, channel, join, withdraw", () => {
     expect(Buffer.from(channel.title).toString("utf8").replace(/\0+$/, "")).to.equal(
       "Demo Channel"
     );
+    expect(channel.visibility).to.equal(0);
+    expect(channel.activeRoundStatus).to.equal(0);
     expect(await vaultBalance()).to.equal(0);
+  });
+
+  it("stores visibility and rejects invalid values", async () => {
+    const endsAt = new anchor.BN(Math.floor(Date.now() / 1000) + 3600);
+    const id = new anchor.BN(97);
+    const [ch] = PublicKey.findProgramAddressSync(
+      [Buffer.from("channel"), id.toArrayLike(Buffer, "le", 8)],
+      program.programId
+    );
+    await program.methods
+      .createChannel(id, "Private room", endsAt, 1)
+      .accountsPartial({
+        host: payer.publicKey,
+        config: configPda,
+        usdcMint,
+        channel: ch,
+        vault: getAssociatedTokenAddressSync(usdcMint, ch, true),
+      })
+      .rpc();
+    expect((await program.account.channel.fetch(ch)).visibility).to.equal(1);
+
+    const id2 = new anchor.BN(96);
+    const [ch2] = PublicKey.findProgramAddressSync(
+      [Buffer.from("channel"), id2.toArrayLike(Buffer, "le", 8)],
+      program.programId
+    );
+    await expectAnchorError(
+      program.methods
+        .createChannel(id2, "Bad visibility", endsAt, 2)
+        .accountsPartial({
+          host: payer.publicKey,
+          config: configPda,
+          usdcMint,
+          channel: ch2,
+          vault: getAssociatedTokenAddressSync(usdcMint, ch2, true),
+        })
+        .rpc(),
+      "InvalidVisibility"
+    );
   });
 
   it("rejects a title longer than 64 bytes", async () => {
@@ -123,7 +164,7 @@ describe("squawk — phase 1: config, channel, join, withdraw", () => {
     );
     await expectAnchorError(
       program.methods
-        .createChannel(id, "x".repeat(65), endsAt)
+        .createChannel(id, "x".repeat(65), endsAt, 0)
         .accountsPartial({
           host: payer.publicKey,
           config: configPda,
@@ -144,7 +185,7 @@ describe("squawk — phase 1: config, channel, join, withdraw", () => {
     );
     await expectAnchorError(
       program.methods
-        .createChannel(id, "Too late", new anchor.BN(1))
+        .createChannel(id, "Too late", new anchor.BN(1), 0)
         .accountsPartial({
           host: payer.publicKey,
           config: configPda,
@@ -313,7 +354,7 @@ describe("squawk — phase 1: config, channel, join, withdraw", () => {
       vault2 = getAssociatedTokenAddressSync(usdcMint, channel2, true);
       endsAt = new anchor.BN(Math.floor(Date.now() / 1000) + 3600);
       await program.methods
-        .createChannel(ID2, "Live Channel", endsAt)
+        .createChannel(ID2, "Live Channel", endsAt, 0)
         .accountsPartial({
           host: payer.publicKey,
           config: configPda,
@@ -479,7 +520,7 @@ describe("squawk — phase 1: config, channel, join, withdraw", () => {
       vault3 = getAssociatedTokenAddressSync(usdcMint, channel3, true);
       const endsAt = new anchor.BN(Math.floor(Date.now() / 1000) + 3600);
       await program.methods
-        .createChannel(ID3, "Round Engine", endsAt)
+        .createChannel(ID3, "Round Engine", endsAt, 0)
         .accountsPartial({
           host: payer.publicKey,
           config: configPda,
@@ -549,6 +590,15 @@ describe("squawk — phase 1: config, channel, join, withdraw", () => {
         .rpc();
       const ch = await program.account.channel.fetch(channel3);
       expect(ch.activeRound).to.equal(0);
+      // board mirror: private-channel members follow play through the channel
+      expect(
+        Buffer.from(ch.activeQuestion).toString("utf8").replace(/\0+$/, "")
+      ).to.equal("Will it work?");
+      expect(ch.activeLocksAt.toNumber()).to.equal(locksAt.toNumber());
+      expect(ch.activeRoundStatus).to.equal(1); // Staking
+      expect(ch.revealYes.toNumber()).to.equal(0);
+      expect(ch.revealNo.toNumber()).to.equal(0);
+      expect(ch.lastOutcome).to.equal(0);
 
       // user1 stakes YES 30 via SESSION KEY, then adds 10 more
       await stakeAs(sessionSigner, 0, { yes: {} }, USDC(30), member3(payer.publicKey));
@@ -593,6 +643,9 @@ describe("squawk — phase 1: config, channel, join, withdraw", () => {
         stakeAs(user2, 0, { no: {} }, USDC(1), member3(user2.publicKey)),
         "RoundNotStaking"
       );
+      expect(
+        (await program.account.channel.fetch(channel3)).activeRoundStatus
+      ).to.equal(2); // mirror: Locked
 
       // host resolves YES; snapshots taken
       await program.methods
@@ -602,6 +655,12 @@ describe("squawk — phase 1: config, channel, join, withdraw", () => {
       const resolved = await program.account.round.fetch(roundPda(0));
       expect(resolved.status).to.deep.equal({ resolvedYes: {} });
       expect(resolved.snapYes.toNumber()).to.equal(40_000_000);
+      // mirror: pools + outcome revealed on the channel at resolve
+      const chResolved = await program.account.channel.fetch(channel3);
+      expect(chResolved.activeRoundStatus).to.equal(3); // ResolvedYes
+      expect(chResolved.revealYes.toNumber()).to.equal(40_000_000);
+      expect(chResolved.revealNo.toNumber()).to.equal(20_000_000);
+      expect(chResolved.lastOutcome).to.equal(1);
 
       // claims are permissionless: winner gets stake + pro-rata losing pool
       await program.methods

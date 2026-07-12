@@ -58,6 +58,21 @@ pub struct Channel {
     pub created_at: i64,
     pub ends_at: i64,
     pub bump: u8,
+    /// 0 = public ER, 1 = private (TEE PER, blind betting + unlisted).
+    pub visibility: u8,
+    /// Board mirror: the active round's display data duplicated onto the
+    /// channel. On a private ER the Round accounts are host-only-readable,
+    /// so members follow play through these fields instead. Written
+    /// unconditionally (harmless on public channels).
+    pub active_question: [u8; MAX_QUESTION_LEN],
+    pub active_locks_at: i64,
+    /// RoundStatus of the active round, as u8.
+    pub active_round_status: u8,
+    /// Resolve-time pool snapshots, revealed at resolve (zero while staking).
+    pub reveal_yes: u64,
+    pub reveal_no: u64,
+    /// 0 = none, 1 = yes, 2 = no, 3 = voided.
+    pub last_outcome: u8,
 }
 
 /// One micro-question — seeds `["round", channel_key, round_index: u16 le]`.

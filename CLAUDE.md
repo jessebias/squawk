@@ -20,9 +20,11 @@ squawk/
   programs/squawk/src/        # lib.rs, state.rs, errors.rs — single Anchor program
   tests/squawk.ts             # mocha tests (run via scripts/run-tests.js, NOT ts-mocha CLI)
   app/                        # Expo RN app from @solana-mobile/solana-mobile-expo-template
-    src/screens|components/   # Discover, Channel, Profile · PTT, OddsCards, RoundCard,
-                              # LiveDot, BottomTabBar (five-tab, raised mic)
-    src/lib/                  # connections.ts, program.ts, session.ts, squawk.ts
+    src/screens|components/   # Discover, Channel, CreateChannel, Profile · PTT, OddsCards,
+                              # RoundCard, LiveDot, HostPanel (in-app hosting),
+                              # BottomTabBar (five-tab, raised + opens CreateChannel)
+    src/lib/                  # connections.ts, program.ts, session.ts, hostKey.ts,
+                              # squawk.ts, host.ts (phone-side host actions)
     src/theme.ts              # §8 tokens per the approved mockup (hairlines, no gradients)
   scripts/                    # mint-mock-usdc.ts, seed-demo.ts, run-tests.js
   docs/                       # plan.md (working spec) + decisions.md (decision log)
@@ -38,8 +40,8 @@ squawk/
   `anchor-counter` (delegate/undelegate), `rock-paper-scissor` (rounds/stakes/settlement),
   `session-keys`, `crank-counter`.
 - **Rust crates:** `anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }`,
-  `ephemeral-rollups-sdk = { version = "0.14.4", features = ["anchor-compat"] }`,
-  session-keys program crate `gpl_session` 3.1.0.
+  `ephemeral-rollups-sdk = { version = "0.14.4", features = ["anchor-compat", "access-control"] }`
+  (access-control = the PER ephemeral-permission CPIs), session-keys program crate `gpl_session` 3.1.0.
 - **Android builds:** `JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home`
   (default java is 25 and will break Gradle) and `ANDROID_HOME=$HOME/Library/Android/sdk`.
   Emulator: `Medium_Phone_API_36.1`. **Expo Go does not work** (MWA needs native modules) — use
@@ -64,12 +66,17 @@ npx ts-node scripts/fund-wallet.ts <address> [sol] [usdc]   # fund the app's Pro
 npx ts-node scripts/host-demo.ts [rounds] [--auto=<s>]      # drive a live demo channel
 npx ts-node scripts/phase2-lifecycle.ts                     # delegation lifecycle proof
 npx ts-node scripts/phase3-simulate.ts                      # 10-round bot simulation
+npx ts-node scripts/phase-per-lifecycle.ts                  # PRIVATE-ER (TEE) blind-betting proof P1–P6
 ```
 
 ## Wallets (app)
 
 Precedence **privy → mwa (Seeker) → local burner** via `app/src/providers/WalletProvider.tsx`;
-session key is always a local burner. Privy needs `EXPO_PUBLIC_PRIVY_APP_ID/_CLIENT_ID` in
+session key is always a local burner. The **host key is a second local burner**
+(`lib/hostKey.ts`) that owns channels created on-device via the "+" tab — it signs every host
+instruction (base + ER) locally because Privy/MWA can't sign ER transactions; the main wallet
+only funds it with one SOL transfer (docs/decisions.md 2026-07-12). Hosting is device-bound:
+reinstall orphans live hosted channels. Privy needs `EXPO_PUBLIC_PRIVY_APP_ID/_CLIENT_ID` in
 `app/.env` (empty ⇒ Privy disabled, burner+MWA only). Polyfill order in `polyfills.ts` is
 load-bearing; never enable metro package exports globally (docs/decisions.md 2026-07-12).
 
@@ -90,6 +97,20 @@ load-bearing; never enable metro package exports globally (docs/decisions.md 202
 - Delegation lifecycle: base layer `create_channel`/`join_channel` → `go_live` delegates
   Channel/Members/Rounds → ER runs `open_round`/`stake`/`lock_round`(crank)/`resolve`/`claim` →
   `close_channel` commits + undelegates → base layer `withdraw`.
+- **Private channels (`Channel.visibility=1`) = blind betting on the TEE Private ER**
+  (docs/decisions.md 2026-07-12): delegate instructions take `validator: Option<Pubkey>`
+  (TEE `MTEWGuqxUpYZGFJQcp8tLN7x5v9BSeoFHYWQQ3n3xzo`, endpoint `devnet-tee.magicblock.app`);
+  after delegation the host fires `create_channel_permission` / `create_member_permission` /
+  `create_round_permission` (Round = **host-only readable** — permissions gate reads, not
+  writes, so members still stake). Players follow the round via the Channel **board mirror**
+  (`active_*`/`reveal_*`/`last_outcome` — written by open/lock/resolve unconditionally; keep
+  `channel` writable in LockRound/ResolveRound and the crank metas). Every PDA is pre-funded
+  0.0005 SOL before delegation to pay its own ephemeral-permission rent. Client reads on
+  private channels need the per-identity token-authed TEE connection
+  (`getTeeConnection` — session key for players, host key for hosts). Unlisted on Discover;
+  joined via invite code / `squawk://channel/<pk>` deep link.
+- **Any `channel.all()` needs a `dataSize` filter** (like Member): pre-visibility channels
+  have a smaller layout that overruns the decoder.
 
 ## Demo logistics (bite-you-on-Sunday items)
 
@@ -111,8 +132,12 @@ load-bearing; never enable metro package exports globally (docs/decisions.md 202
 - [x] Phase 4 — mobile app core (burner session keys, three screens, live odds via ER
       polling+ws; full join→stake→claim→settle→collect loop verified on emulator.
       RN/Hermes gotchas are documented in docs/decisions.md — don't regress polyfills.ts)
-- [ ] Phase 5 — polish + demo video + Luma submission (Sunday): MWA connect on a real
-      device, second phone, tx-counter closing shot, README demo script, record + submit
+- [x] Phase 5a — polish (haptics vocabulary, SettlementCard closing shot, skeletons/edge
+      states, in-panel host errors) + **private channels: PER blind betting on the devnet TEE**
+      (proven by `scripts/phase-per-lifecycle.ts`: 13 TEE txs · blind stake · crank · reveal ·
+      1 settlement)
+- [ ] Phase 5b — demo video + Luma submission (Sunday): MWA connect on a real device, second
+      phone, README demo script, record + submit; in-app private-channel pass on the emulator
 
 Keep this file, docs/plan.md, and docs/decisions.md in sync with any change to commands, layout, versions,
 or architecture. AGENTS.md and GEMINI.md are symlinks to this file.

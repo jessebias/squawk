@@ -124,7 +124,7 @@ async function main(): Promise<void> {
   };
 
   await program.methods
-    .createChannel(channelId, "Simulated Match", new anchor.BN(Math.floor(Date.now() / 1000) + 7200))
+    .createChannel(channelId, "Simulated Match", new anchor.BN(Math.floor(Date.now() / 1000) + 7200), 0)
     .accountsPartial({ host: payer.publicKey, config: configPda, usdcMint, channel: channelPda, vault })
     .rpc();
   for (let i = 0; i < N_ROUNDS; i++) {
@@ -156,19 +156,19 @@ async function main(): Promise<void> {
   step("go_live + delegate channel/members/rounds");
   await program.methods.goLive().accountsPartial({ host: payer.publicKey, channel: channelPda }).rpc();
   await program.methods
-    .delegateChannel(channelId)
+    .delegateChannel(channelId, null)
     .accountsPartial({ payer: payer.publicKey, channel: channelPda })
     .rpc({ skipPreflight: true });
   for (const bot of bots) {
     await program.methods
-      .delegateMember(channelId, bot.publicKey)
+      .delegateMember(channelId, bot.publicKey, null)
       .accountsPartial({ payer: payer.publicKey, channel: channelPda, member: memberPda(bot.publicKey) })
       .rpc({ skipPreflight: true });
     await sleep(250);
   }
   for (let i = 0; i < N_ROUNDS; i++) {
     await program.methods
-      .delegateRound(channelId, i)
+      .delegateRound(channelId, i, null)
       .accountsPartial({ payer: payer.publicKey, channel: channelPda, round: roundPda(i) })
       .rpc({ skipPreflight: true });
     await sleep(250);

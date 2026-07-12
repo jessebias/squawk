@@ -61,7 +61,11 @@ async function main(): Promise<void> {
   // re-running tops up the demo set instead of duplicating channels.
   const now = Math.floor(Date.now() / 1000);
   const existing = new Set(
-    ((await (program.account as any).channel.all()) as any[])
+    // dataSize filter: pre-visibility channels have a smaller layout that
+    // overruns the decoder (same class of gotcha as old Member accounts).
+    ((await (program.account as any).channel.all([
+      { dataSize: (program.account as any).channel.size },
+    ])) as any[])
       .filter((c) => {
         const st = Object.keys(c.account.status)[0];
         return (st === "open" || st === "live") && c.account.endsAt.toNumber() > now;
@@ -85,7 +89,7 @@ async function main(): Promise<void> {
     const lifetimeHours = hoursOverride ?? spec.hours;
     const endsAt = new anchor.BN(Math.floor(Date.now() / 1000) + lifetimeHours * 3600);
     await program.methods
-      .createChannel(channelId, spec.title, endsAt)
+      .createChannel(channelId, spec.title, endsAt, 0)
       .accountsPartial({
         host: payer.publicKey,
         config: configPda,

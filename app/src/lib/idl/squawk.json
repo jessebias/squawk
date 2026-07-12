@@ -397,6 +397,308 @@
         {
           "name": "ends_at",
           "type": "i64"
+        },
+        {
+          "name": "visibility",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "create_channel_permission",
+      "docs": [
+        "Private-channel (PER) read gate for the Channel account: host + every",
+        "member's wallet and session key may read it on the TEE ER; everyone",
+        "else is blocked at ingress. Runs ON the ER after delegation; the",
+        "channel PDA signs and pays the ephemeral rent (pre-funded on base",
+        "before delegation). remaining_accounts = this channel's Member PDAs."
+      ],
+      "discriminator": [
+        240,
+        90,
+        146,
+        88,
+        241,
+        243,
+        85,
+        109
+      ],
+      "accounts": [
+        {
+          "name": "host",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "channel",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "channel_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "permission",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  101,
+                  114,
+                  109,
+                  105,
+                  115,
+                  115,
+                  105,
+                  111,
+                  110,
+                  58
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                136,
+                161,
+                10,
+                196,
+                33,
+                152,
+                1,
+                214,
+                246,
+                106,
+                29,
+                60,
+                6,
+                152,
+                192,
+                102,
+                169,
+                175,
+                212,
+                217,
+                180,
+                252,
+                231,
+                71,
+                151,
+                141,
+                209,
+                5,
+                168,
+                212,
+                103,
+                82
+              ]
+            }
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "address": "MagicVau1t999999999999999999999999999999999"
+        },
+        {
+          "name": "magic_program",
+          "address": "Magic11111111111111111111111111111111111111"
+        },
+        {
+          "name": "permission_program",
+          "address": "ACLseoPoyC3cBqoUtkbjZ4aDrkurZW86v19pXz2XQnp1"
+        }
+      ],
+      "args": [
+        {
+          "name": "channel_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "create_member_permission",
+      "docs": [
+        "PER read gate for one Member account: only the host and that member",
+        "(wallet + session key) may read it — individual stakes and balances",
+        "stay hidden from other players."
+      ],
+      "discriminator": [
+        92,
+        137,
+        182,
+        68,
+        33,
+        43,
+        36,
+        76
+      ],
+      "accounts": [
+        {
+          "name": "host",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "channel",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "channel_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "member",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  101,
+                  109,
+                  98,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "arg",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "permission",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  101,
+                  114,
+                  109,
+                  105,
+                  115,
+                  115,
+                  105,
+                  111,
+                  110,
+                  58
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "member"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                136,
+                161,
+                10,
+                196,
+                33,
+                152,
+                1,
+                214,
+                246,
+                106,
+                29,
+                60,
+                6,
+                152,
+                192,
+                102,
+                169,
+                175,
+                212,
+                217,
+                180,
+                252,
+                231,
+                71,
+                151,
+                141,
+                209,
+                5,
+                168,
+                212,
+                103,
+                82
+              ]
+            }
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "address": "MagicVau1t999999999999999999999999999999999"
+        },
+        {
+          "name": "magic_program",
+          "address": "Magic11111111111111111111111111111111111111"
+        },
+        {
+          "name": "permission_program",
+          "address": "ACLseoPoyC3cBqoUtkbjZ4aDrkurZW86v19pXz2XQnp1"
+        }
+      ],
+      "args": [
+        {
+          "name": "_channel_id",
+          "type": "u64"
+        },
+        {
+          "name": "user",
+          "type": "pubkey"
         }
       ]
     },
@@ -494,9 +796,173 @@
       ]
     },
     {
+      "name": "create_round_permission",
+      "docs": [
+        "PER read gate for one Round account: HOST ONLY — the pools are",
+        "invisible to players while staking. This is the blind bet; players",
+        "follow the round through the channel's board-mirror fields and see",
+        "the pools only when resolve_round reveals them there."
+      ],
+      "discriminator": [
+        144,
+        13,
+        108,
+        48,
+        17,
+        186,
+        162,
+        211
+      ],
+      "accounts": [
+        {
+          "name": "host",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "channel",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  110,
+                  110,
+                  101,
+                  108
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "channel_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "round",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "channel"
+              },
+              {
+                "kind": "arg",
+                "path": "round_index"
+              }
+            ]
+          }
+        },
+        {
+          "name": "permission",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  101,
+                  114,
+                  109,
+                  105,
+                  115,
+                  115,
+                  105,
+                  111,
+                  110,
+                  58
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "round"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                136,
+                161,
+                10,
+                196,
+                33,
+                152,
+                1,
+                214,
+                246,
+                106,
+                29,
+                60,
+                6,
+                152,
+                192,
+                102,
+                169,
+                175,
+                212,
+                217,
+                180,
+                252,
+                231,
+                71,
+                151,
+                141,
+                209,
+                5,
+                168,
+                212,
+                103,
+                82
+              ]
+            }
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "address": "MagicVau1t999999999999999999999999999999999"
+        },
+        {
+          "name": "magic_program",
+          "address": "Magic11111111111111111111111111111111111111"
+        },
+        {
+          "name": "permission_program",
+          "address": "ACLseoPoyC3cBqoUtkbjZ4aDrkurZW86v19pXz2XQnp1"
+        }
+      ],
+      "args": [
+        {
+          "name": "_channel_id",
+          "type": "u64"
+        },
+        {
+          "name": "round_index",
+          "type": "u16"
+        }
+      ]
+    },
+    {
       "name": "delegate_channel",
       "docs": [
-        "Instruction 4b — delegate the Channel PDA to the ER. Host-only, Live only."
+        "Instruction 4b — delegate the Channel PDA to the ER. Host-only, Live only.",
+        "`validator` targets a specific ER validator (the TEE for private channels)."
       ],
       "discriminator": [
         218,
@@ -686,6 +1152,12 @@
         {
           "name": "channel_id",
           "type": "u64"
+        },
+        {
+          "name": "validator",
+          "type": {
+            "option": "pubkey"
+          }
         }
       ]
     },
@@ -914,6 +1386,12 @@
         {
           "name": "user",
           "type": "pubkey"
+        },
+        {
+          "name": "validator",
+          "type": {
+            "option": "pubkey"
+          }
         }
       ]
     },
@@ -1139,6 +1617,12 @@
         {
           "name": "round_index",
           "type": "u16"
+        },
+        {
+          "name": "validator",
+          "type": {
+            "option": "pubkey"
+          }
         }
       ]
     },
@@ -1535,6 +2019,7 @@
       "accounts": [
         {
           "name": "channel",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -1750,6 +2235,7 @@
         },
         {
           "name": "channel",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -1839,6 +2325,7 @@
         },
         {
           "name": "channel",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -2405,6 +2892,21 @@
       "code": 6023,
       "name": "WrongRound",
       "msg": "Position belongs to a different round"
+    },
+    {
+      "code": 6024,
+      "name": "InvalidVisibility",
+      "msg": "Visibility must be 0 (public) or 1 (private)"
+    },
+    {
+      "code": 6025,
+      "name": "ChannelNotPrivate",
+      "msg": "Channel is not private"
+    },
+    {
+      "code": 6026,
+      "name": "WrongChannel",
+      "msg": "Account does not belong to this channel"
     }
   ],
   "types": [
@@ -2470,6 +2972,57 @@
           },
           {
             "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "visibility",
+            "docs": [
+              "0 = public ER, 1 = private (TEE PER, blind betting + unlisted)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "active_question",
+            "docs": [
+              "Board mirror: the active round's display data duplicated onto the",
+              "channel. On a private ER the Round accounts are host-only-readable,",
+              "so members follow play through these fields instead. Written",
+              "unconditionally (harmless on public channels)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                128
+              ]
+            }
+          },
+          {
+            "name": "active_locks_at",
+            "type": "i64"
+          },
+          {
+            "name": "active_round_status",
+            "docs": [
+              "RoundStatus of the active round, as u8."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "reveal_yes",
+            "docs": [
+              "Resolve-time pool snapshots, revealed at resolve (zero while staking)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "reveal_no",
+            "type": "u64"
+          },
+          {
+            "name": "last_outcome",
+            "docs": [
+              "0 = none, 1 = yes, 2 = no, 3 = voided."
+            ],
             "type": "u8"
           }
         ]

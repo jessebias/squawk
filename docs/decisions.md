@@ -237,8 +237,98 @@ Newest at the bottom. Format: date · decision · why.
   channels persist on-chain until they expire. Also removed from `seed-demo.ts` (kept Madrid vs
   Inter + Lakers vs Celtics).
 
+## 2026-07-12 — In-app channel creation + phone hosting (the "+" tab)
+
+- **The channel host is a second local burner** (`lib/hostKey.ts`, secure-store key
+  `squawk_host_key_v1`) — NOT the active wallet and NOT the session key. Rationale: host
+  instructions (`open_round`/`resolve_round`/`close_channel`) run on the ER and `has_one = host`
+  requires the host's signature there; Privy exposes only `signAndSendTransaction` (base RPC)
+  and MWA submits via the wallet app's own RPC, so neither can sign ER transactions without a
+  popup per action. With a local host key, every host tx — base and ER — signs via `sendLocal`.
+  The session key was deliberately NOT reused: "session keys may only call stake/claim_round"
+  is a CLAUDE.md invariant. The active wallet's only involvement is one SOL transfer funding
+  the host key (`ensureHostFunded`, same shape as the session funding in `buildJoinTx`).
+- **Caveat:** hosting is device-bound — reinstalling the app orphans a live hosted channel (it
+  can never be resolved/closed; it drops off Discover at `ends_at`). Devnet-acceptable.
+- New: `lib/host.ts` (transliteration of `scripts/host-demo.ts`: create+rounds, go_live+
+  delegation with 250ms pacing, open_round + best-effort `schedule_lock_crank`, resolve + claim
+  sweep, close + `commit_rounds` over **all** rounds in batches of 5 so nothing stays
+  delegated), `screens/CreateChannelScreen.tsx` (the "+" tab: title with **byte** counter — the
+  program checks bytes, emoji are 4+ — duration/rounds pills, rent estimate vs gas balance,
+  resumable retry reusing the same `channelId` since `create_round` is strictly sequential),
+  `components/HostPanel.tsx` (GO LIVE → question composer → YES/NO resolve → end & settle,
+  gated on `channel.host == hostKey.publicKey` in ChannelScreen; host ER txs feed the footer
+  counter). No manual `lock_round` in-app: the crank locks, and `resolve_round` accepts
+  staking-past-`locks_at` as the backstop.
+- Skipped `GetCommitmentSignature` on the phone (untested in Hermes); the base status poll
+  already proves settlement.
+- Every host send retries transient RPC failures (429/blockhash/timeout) with backoff and a
+  fresh blockhash, treating "already been processed" as success — a single 429 in the go-live
+  delegate burst (public magicblock RPC rate-limits) no longer aborts the whole flow. Host-panel
+  and create-screen errors render via `describeError()` (Error → RPC object → JSON) instead of
+  `String(e)`, which was surfacing non-Error throws as "[object Object]".
+- Rent estimate: `0.01 + rounds × 0.004` SOL (10 rounds ≈ 0.05 SOL). Host key fundable
+  manually via `scripts/fund-wallet.ts <hostKey> 0.1 0` if the in-app transfer misbehaves;
+  laptop `host-demo.ts` remains the demo fallback (untouched).
+
+## 2026-07-12 — Private channels: blind betting on the TEE Private ER (accepted on devnet)
+
+- **Private channels (Channel.visibility=1) run on MagicBlock's Private ER** — delegated to the
+  TEE validator (`MTEWGuqxUpYZGFJQcp8tLN7x5v9BSeoFHYWQQ3n3xzo`, `devnet-tee.magicblock.app`) via
+  the new `validator: Option<Pubkey>` arg on all three delegate instructions. Public channels
+  pass `null` and are byte-for-byte unchanged (phase3-simulate re-accepted post-redeploy:
+  94 ER txs, exact conservation).
+- **Read gates are ephemeral permissions created ON the ER** (`CreateEphemeralPermissionCpi`,
+  sdk feature `access-control`) by three new host-only instructions:
+  `create_channel_permission` (host + every member's wallet + session key, members from
+  remaining_accounts), `create_member_permission` (host + that member only),
+  `create_round_permission` (**host only — this is the blind bet**). Client-side permission
+  creation is impossible: the permissioned PDA must sign, so only program CPI works.
+- **The permissioned PDA pays its own ephemeral rent** (quickstart pattern), pre-funded with
+  0.0005 SOL per PDA on base before delegation — the host key isn't ER-writable so it can't
+  pay. (Deviation from the plan's host-pays idea.)
+- **TEE permissions gate READS, not tx submission** (proven, not assumed): members stake into a
+  Round they cannot fetch. `scripts/phase-per-lifecycle.ts` is the acceptance proof — P1 anon
+  reads blocked, P2 member matrix (channel ✓ / own member ✓ / other member ✗ / round ✗),
+  P3 blind stake lands, P4 **crank fires on the TEE**, P5 mirror reveal, P6 settlement +
+  withdraw (commitment `4x2Kt2…GEz3`, 13 TEE txs).
+- **Blind-round UX rides a "board mirror" on Channel** (`active_question/locks_at/round_status`,
+  `reveal_yes/no`, `last_outcome`, +155 bytes): open/lock/resolve write it unconditionally, so
+  private players follow the round (and see the resolve-time reveal) without Round access.
+  Consequence: `channel` became `mut` in LockRound/ResolveRound/ScheduleLockCrank and both
+  crank `AccountMeta`s went writable — a crank-fired lock writes the mirror too.
+- **Reads/writes on private channels use per-identity token-authed connections**
+  (`getTeeConnection` in app/src/lib/connections.ts): SDK `getAuthToken` challenge signed by a
+  LOCAL keypair — session key for players, host key for hosts (Privy/MWA can't sign popup-free).
+  Tokens cached until expiry; URL form `devnet-tee.magicblock.app?token=…`.
+- **Unlisted + invite-only**: Discover filters `visibility !== 0`; joining goes through a paste
+  code (channel pubkey) modal on Discover or the `squawk://channel/<pk>` deep link
+  (`linking` config in AppNavigator), landing on a new JOIN button in ChannelScreen (base-layer
+  snapshot of a private channel stays publicly readable, so the join screen works pre-live).
+- **Channel layout changed → dataSize filters everywhere `channel.all()` is called**
+  (fetchChannels, seed-demo) — pre-visibility channels overrun the decoder exactly like the
+  old Member gotcha; demo channels reseeded. On-chain IDL had to be closed + re-inited
+  (6016 → 6025 bytes; `anchor idl upgrade` can't grow the account).
+
+## 2026-07-12 — Phase 5 polish (non-demo)
+
+- **Haptics vocabulary in `lib/haptics.ts`** (success/error/warning/tap, all fire-and-forget):
+  join success/fail (Discover + ChannelScreen JOIN), collect all (Profile), host actions
+  (HostPanel run()), and a differentiated resolve outcome at the auto-claim trigger
+  (win=Success / loss=Error / void=Warning). PTTButton's accumulator ticks untouched.
+- **SettlementCard is the closing shot** (plan §6): replaces the "channel settled" text with
+  "N ER transactions · 1 settlement · $0.00 fees" + an explorer link from
+  `getSignaturesForAddress(channel, limit 1)` (Hermes-safe; GetCommitmentSignature stays
+  laptop-only).
+- **Edge states**: OddsCards explicit "no stakes yet" zero-pool state + `hidden` blind mode
+  ("?" + "hidden until the call"); pulse `Skeleton` on Discover/Channel first load; HostPanel
+  errors render in-panel (describeError) instead of Alert.alert — the End-channel confirm
+  alert stays.
+
 ## Open questions (Phase 5)
 
 - MWA connect flow on a physical device (Solflare/Phantom) as the flagship join path for the
   demo video; emulator stays on the local wallet.
 - Second physical device for the two-phones demo shot.
+- In-app private-channel E2E on the emulator (protocol proven by phase-per-lifecycle.ts; the
+  RN runtime path — token fetch under Hermes, blind UI states — still needs a device pass).

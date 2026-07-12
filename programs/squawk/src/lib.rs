@@ -1,7 +1,13 @@
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
+use ephemeral_rollups_sdk::access_control::instructions::CreateEphemeralPermissionCpi;
+use ephemeral_rollups_sdk::access_control::structs::{
+    EphemeralMembersArgs, Member as PermissionMember, ACCOUNT_SIGNATURES_FLAG, AUTHORITY_FLAG,
+    PERMISSION_SEED, TX_BALANCES_FLAG, TX_LOGS_FLAG, TX_MESSAGE_FLAG,
+};
 use ephemeral_rollups_sdk::anchor::{commit, delegate, ephemeral};
+use ephemeral_rollups_sdk::consts::{EPHEMERAL_VAULT_ID, PERMISSION_PROGRAM_ID};
 use ephemeral_rollups_sdk::cpi::DelegateConfig;
 use ephemeral_rollups_sdk::ephem::MagicIntentBundleBuilder;
 
@@ -34,8 +40,10 @@ pub mod squawk {
         channel_id: u64,
         title: String,
         ends_at: i64,
+        visibility: u8,
     ) -> Result<()> {
         require!(title.len() <= MAX_TITLE_LEN, SquawkError::TitleTooLong);
+        require!(visibility <= 1, SquawkError::InvalidVisibility);
         let now = Clock::get()?.unix_timestamp;
         require!(ends_at > now, SquawkError::InvalidEndsAt);
 
@@ -53,6 +61,13 @@ pub mod squawk {
         channel.created_at = now;
         channel.ends_at = ends_at;
         channel.bump = ctx.bumps.channel;
+        channel.visibility = visibility;
+        channel.active_question = [0u8; MAX_QUESTION_LEN];
+        channel.active_locks_at = 0;
+        channel.active_round_status = RoundStatus::Pending as u8;
+        channel.reveal_yes = 0;
+        channel.reveal_no = 0;
+        channel.last_outcome = 0;
         Ok(())
     }
 
@@ -116,7 +131,12 @@ pub mod squawk {
     }
 
     /// Instruction 4b — delegate the Channel PDA to the ER. Host-only, Live only.
-    pub fn delegate_channel(ctx: Context<DelegateChannel>, channel_id: u64) -> Result<()> {
+    /// `validator` targets a specific ER validator (the TEE for private channels).
+    pub fn delegate_channel(
+        ctx: Context<DelegateChannel>,
+        channel_id: u64,
+        validator: Option<Pubkey>,
+    ) -> Result<()> {
         {
             let data = ctx.accounts.channel.try_borrow_data()?;
             let ch = Channel::try_deserialize(&mut data.as_ref())?;
@@ -127,7 +147,10 @@ pub mod squawk {
         ctx.accounts.delegate_channel(
             &ctx.accounts.payer,
             &[b"channel", id_bytes.as_ref()],
-            DelegateConfig::default(),
+            DelegateConfig {
+                validator,
+                ..Default::default()
+            },
         )?;
         Ok(())
     }
@@ -135,7 +158,12 @@ pub mod squawk {
     /// Instruction 4c — delegate one Member PDA to the ER. Host-only, Live only.
     /// (The channel account may itself already be delegated; only its data is
     /// read here, which survives delegation.)
-    pub fn delegate_member(ctx: Context<DelegateMember>, _channel_id: u64, user: Pubkey) -> Result<()> {
+    pub fn delegate_member(
+        ctx: Context<DelegateMember>,
+        _channel_id: u64,
+        user: Pubkey,
+        validator: Option<Pubkey>,
+    ) -> Result<()> {
         {
             let data = ctx.accounts.channel.try_borrow_data()?;
             let ch = Channel::try_deserialize(&mut data.as_ref())?;
@@ -146,7 +174,10 @@ pub mod squawk {
         ctx.accounts.delegate_member(
             &ctx.accounts.payer,
             &[b"member", channel_key.as_ref(), user.as_ref()],
-            DelegateConfig::default(),
+            DelegateConfig {
+                validator,
+                ..Default::default()
+            },
         )?;
         Ok(())
     }
@@ -181,7 +212,12 @@ pub mod squawk {
     }
 
     /// Instruction 4d — delegate one Round PDA to the ER. Host-only, Live only.
-    pub fn delegate_round(ctx: Context<DelegateRound>, _channel_id: u64, round_index: u16) -> Result<()> {
+    pub fn delegate_round(
+        ctx: Context<DelegateRound>,
+        _channel_id: u64,
+        round_index: u16,
+        validator: Option<Pubkey>,
+    ) -> Result<()> {
         {
             let data = ctx.accounts.channel.try_borrow_data()?;
             let ch = Channel::try_deserialize(&mut data.as_ref())?;
@@ -193,8 +229,116 @@ pub mod squawk {
         ctx.accounts.delegate_round(
             &ctx.accounts.payer,
             &[b"round", channel_key.as_ref(), idx_bytes.as_ref()],
-            DelegateConfig::default(),
+            DelegateConfig {
+                validator,
+                ..Default::default()
+            },
         )?;
+        Ok(())
+    }
+
+    /// Private-channel (PER) read gate for the Channel account: host + every
+    /// member's wallet and session key may read it on the TEE ER; everyone
+    /// else is blocked at ingress. Runs ON the ER after delegation; the
+    /// channel PDA signs and pays the ephemeral rent (pre-funded on base
+    /// before delegation). remaining_accounts = this channel's Member PDAs.
+    pub fn create_channel_permission<'info>(
+        ctx: Context<'_, '_, 'info, 'info, CreateChannelPermission<'info>>,
+        channel_id: u64,
+    ) -> Result<()> {
+        let ch = read_private_live_channel(&ctx.accounts.channel, &ctx.accounts.host.key())?;
+        let channel_key = ctx.accounts.channel.key();
+        let mut members = vec![PermissionMember {
+            flags: HOST_PERMISSION_FLAGS,
+            pubkey: ch.host,
+        }];
+        for acc in ctx.remaining_accounts.iter() {
+            let data = acc.try_borrow_data()?;
+            let m = Member::try_deserialize(&mut data.as_ref())?;
+            require_keys_eq!(m.channel, channel_key, SquawkError::WrongChannel);
+            members.push(PermissionMember { flags: VIEW_FLAGS, pubkey: m.user });
+            members.push(PermissionMember { flags: VIEW_FLAGS, pubkey: m.session_key });
+        }
+        let id_bytes = channel_id.to_le_bytes();
+        CreateEphemeralPermissionCpi {
+            permissioned_account: ctx.accounts.channel.to_account_info(),
+            permission: ctx.accounts.permission.to_account_info(),
+            payer: ctx.accounts.channel.to_account_info(),
+            vault: ctx.accounts.vault.to_account_info(),
+            magic_program: ctx.accounts.magic_program.to_account_info(),
+            permission_program: ctx.accounts.permission_program.to_account_info(),
+            args: EphemeralMembersArgs { is_private: true, members },
+        }
+        .invoke_signed(&[&[b"channel", id_bytes.as_ref(), &[ch.bump]]])?;
+        Ok(())
+    }
+
+    /// PER read gate for one Member account: only the host and that member
+    /// (wallet + session key) may read it — individual stakes and balances
+    /// stay hidden from other players.
+    pub fn create_member_permission(
+        ctx: Context<CreateMemberPermission>,
+        _channel_id: u64,
+        user: Pubkey,
+    ) -> Result<()> {
+        let ch = read_private_live_channel(&ctx.accounts.channel, &ctx.accounts.host.key())?;
+        let channel_key = ctx.accounts.channel.key();
+        let m = {
+            let data = ctx.accounts.member.try_borrow_data()?;
+            Member::try_deserialize(&mut data.as_ref())?
+        };
+        let members = vec![
+            PermissionMember {
+                flags: HOST_PERMISSION_FLAGS,
+                pubkey: ch.host,
+            },
+            PermissionMember { flags: VIEW_FLAGS, pubkey: m.user },
+            PermissionMember { flags: VIEW_FLAGS, pubkey: m.session_key },
+        ];
+        CreateEphemeralPermissionCpi {
+            permissioned_account: ctx.accounts.member.to_account_info(),
+            permission: ctx.accounts.permission.to_account_info(),
+            payer: ctx.accounts.member.to_account_info(),
+            vault: ctx.accounts.vault.to_account_info(),
+            magic_program: ctx.accounts.magic_program.to_account_info(),
+            permission_program: ctx.accounts.permission_program.to_account_info(),
+            args: EphemeralMembersArgs { is_private: true, members },
+        }
+        .invoke_signed(&[&[b"member", channel_key.as_ref(), user.as_ref(), &[m.bump]]])?;
+        Ok(())
+    }
+
+    /// PER read gate for one Round account: HOST ONLY — the pools are
+    /// invisible to players while staking. This is the blind bet; players
+    /// follow the round through the channel's board-mirror fields and see
+    /// the pools only when resolve_round reveals them there.
+    pub fn create_round_permission(
+        ctx: Context<CreateRoundPermission>,
+        _channel_id: u64,
+        round_index: u16,
+    ) -> Result<()> {
+        let ch = read_private_live_channel(&ctx.accounts.channel, &ctx.accounts.host.key())?;
+        let channel_key = ctx.accounts.channel.key();
+        let r = {
+            let data = ctx.accounts.round.try_borrow_data()?;
+            Round::try_deserialize(&mut data.as_ref())?
+        };
+        require_keys_eq!(r.channel, channel_key, SquawkError::WrongChannel);
+        let members = vec![PermissionMember {
+            flags: HOST_PERMISSION_FLAGS,
+            pubkey: ch.host,
+        }];
+        let idx_bytes = round_index.to_le_bytes();
+        CreateEphemeralPermissionCpi {
+            permissioned_account: ctx.accounts.round.to_account_info(),
+            permission: ctx.accounts.permission.to_account_info(),
+            payer: ctx.accounts.round.to_account_info(),
+            vault: ctx.accounts.vault.to_account_info(),
+            magic_program: ctx.accounts.magic_program.to_account_info(),
+            permission_program: ctx.accounts.permission_program.to_account_info(),
+            args: EphemeralMembersArgs { is_private: true, members },
+        }
+        .invoke_signed(&[&[b"round", channel_key.as_ref(), idx_bytes.as_ref(), &[r.bump]]])?;
         Ok(())
     }
 
@@ -226,7 +370,14 @@ pub mod squawk {
         round.opens_at = now;
         round.locks_at = locks_at;
         round.resolves_by = resolves_by;
-        ctx.accounts.channel.active_round = round_index;
+        let channel = &mut ctx.accounts.channel;
+        channel.active_round = round_index;
+        channel.active_question = q;
+        channel.active_locks_at = locks_at;
+        channel.active_round_status = RoundStatus::Staking as u8;
+        channel.reveal_yes = 0;
+        channel.reveal_no = 0;
+        channel.last_outcome = 0;
         Ok(())
     }
 
@@ -282,6 +433,10 @@ pub mod squawk {
         let now = Clock::get()?.unix_timestamp;
         require!(now >= round.locks_at, SquawkError::RoundNotLockable);
         round.status = RoundStatus::Locked;
+        let channel = &mut ctx.accounts.channel;
+        if channel.active_round == round.round_index {
+            channel.active_round_status = RoundStatus::Locked as u8;
+        }
         Ok(())
     }
 
@@ -315,6 +470,17 @@ pub mod squawk {
                 Side::No => RoundStatus::ResolvedNo,
             }
         };
+        let channel = &mut ctx.accounts.channel;
+        if channel.active_round == round.round_index {
+            channel.active_round_status = round.status as u8;
+            channel.reveal_yes = round.snap_yes;
+            channel.reveal_no = round.snap_no;
+            channel.last_outcome = match round.status {
+                RoundStatus::ResolvedYes => 1,
+                RoundStatus::ResolvedNo => 2,
+                _ => 3,
+            };
+        }
         Ok(())
     }
 
@@ -406,7 +572,7 @@ pub mod squawk {
         let crank_ix = Instruction {
             program_id: crate::ID,
             accounts: vec![
-                AccountMeta::new_readonly(ctx.accounts.channel.key(), false),
+                AccountMeta::new(ctx.accounts.channel.key(), false),
                 AccountMeta::new(ctx.accounts.round.key(), false),
             ],
             data: anchor_lang::InstructionData::data(&crate::instruction::LockRound {
@@ -426,7 +592,7 @@ pub mod squawk {
             &ix_data,
             vec![
                 AccountMeta::new(ctx.accounts.payer.key(), true),
-                AccountMeta::new_readonly(ctx.accounts.channel.key(), false),
+                AccountMeta::new(ctx.accounts.channel.key(), false),
                 AccountMeta::new(ctx.accounts.round.key(), false),
             ],
         );
@@ -539,6 +705,22 @@ pub mod squawk {
             .ok_or(SquawkError::Overflow)?;
         Ok(())
     }
+}
+
+/// Read flags for private-channel members; the host additionally holds
+/// AUTHORITY (may update/close the permission).
+const VIEW_FLAGS: u8 = TX_LOGS_FLAG | TX_BALANCES_FLAG | TX_MESSAGE_FLAG | ACCOUNT_SIGNATURES_FLAG;
+const HOST_PERMISSION_FLAGS: u8 = AUTHORITY_FLAG | VIEW_FLAGS;
+
+/// Shared guard for the PER permission instructions: the channel must be
+/// private, Live (delegated), and the signer must be its host.
+fn read_private_live_channel(channel: &AccountInfo, host: &Pubkey) -> Result<Channel> {
+    let data = channel.try_borrow_data()?;
+    let ch = Channel::try_deserialize(&mut data.as_ref())?;
+    require!(ch.status == ChannelStatus::Live, SquawkError::ChannelNotLive);
+    require!(ch.visibility == 1, SquawkError::ChannelNotPrivate);
+    require_keys_eq!(*host, ch.host, SquawkError::Unauthorized);
+    Ok(ch)
 }
 
 #[derive(Accounts)]
@@ -693,6 +875,93 @@ pub struct DelegateRound<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(channel_id: u64)]
+pub struct CreateChannelPermission<'info> {
+    #[account(mut)]
+    pub host: Signer<'info>,
+    /// CHECK: PDA verified by seeds; handler checks host/Live/private from raw data
+    #[account(mut, seeds = [b"channel", channel_id.to_le_bytes().as_ref()], bump)]
+    pub channel: AccountInfo<'info>,
+    /// CHECK: ephemeral permission PDA, created by the permission program
+    #[account(
+        mut,
+        seeds = [PERMISSION_SEED, channel.key().as_ref()],
+        bump,
+        seeds::program = PERMISSION_PROGRAM_ID
+    )]
+    pub permission: AccountInfo<'info>,
+    /// CHECK: ephemeral rent vault
+    #[account(mut, address = EPHEMERAL_VAULT_ID)]
+    pub vault: AccountInfo<'info>,
+    /// CHECK: the MagicBlock magic program
+    #[account(address = ephemeral_rollups_sdk::consts::MAGIC_PROGRAM_ID)]
+    pub magic_program: AccountInfo<'info>,
+    /// CHECK: the ephemeral permission program
+    #[account(address = PERMISSION_PROGRAM_ID)]
+    pub permission_program: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(channel_id: u64, user: Pubkey)]
+pub struct CreateMemberPermission<'info> {
+    #[account(mut)]
+    pub host: Signer<'info>,
+    /// CHECK: PDA verified by seeds; handler checks host/Live/private from raw data
+    #[account(seeds = [b"channel", channel_id.to_le_bytes().as_ref()], bump)]
+    pub channel: AccountInfo<'info>,
+    /// CHECK: PDA verified by seeds; signs and pays the ephemeral rent
+    #[account(mut, seeds = [b"member", channel.key().as_ref(), user.as_ref()], bump)]
+    pub member: AccountInfo<'info>,
+    /// CHECK: ephemeral permission PDA, created by the permission program
+    #[account(
+        mut,
+        seeds = [PERMISSION_SEED, member.key().as_ref()],
+        bump,
+        seeds::program = PERMISSION_PROGRAM_ID
+    )]
+    pub permission: AccountInfo<'info>,
+    /// CHECK: ephemeral rent vault
+    #[account(mut, address = EPHEMERAL_VAULT_ID)]
+    pub vault: AccountInfo<'info>,
+    /// CHECK: the MagicBlock magic program
+    #[account(address = ephemeral_rollups_sdk::consts::MAGIC_PROGRAM_ID)]
+    pub magic_program: AccountInfo<'info>,
+    /// CHECK: the ephemeral permission program
+    #[account(address = PERMISSION_PROGRAM_ID)]
+    pub permission_program: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(channel_id: u64, round_index: u16)]
+pub struct CreateRoundPermission<'info> {
+    #[account(mut)]
+    pub host: Signer<'info>,
+    /// CHECK: PDA verified by seeds; handler checks host/Live/private from raw data
+    #[account(seeds = [b"channel", channel_id.to_le_bytes().as_ref()], bump)]
+    pub channel: AccountInfo<'info>,
+    /// CHECK: PDA verified by seeds; signs and pays the ephemeral rent
+    #[account(mut, seeds = [b"round", channel.key().as_ref(), round_index.to_le_bytes().as_ref()], bump)]
+    pub round: AccountInfo<'info>,
+    /// CHECK: ephemeral permission PDA, created by the permission program
+    #[account(
+        mut,
+        seeds = [PERMISSION_SEED, round.key().as_ref()],
+        bump,
+        seeds::program = PERMISSION_PROGRAM_ID
+    )]
+    pub permission: AccountInfo<'info>,
+    /// CHECK: ephemeral rent vault
+    #[account(mut, address = EPHEMERAL_VAULT_ID)]
+    pub vault: AccountInfo<'info>,
+    /// CHECK: the MagicBlock magic program
+    #[account(address = ephemeral_rollups_sdk::consts::MAGIC_PROGRAM_ID)]
+    pub magic_program: AccountInfo<'info>,
+    /// CHECK: the ephemeral permission program
+    #[account(address = PERMISSION_PROGRAM_ID)]
+    pub permission_program: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
 #[instruction(round_index: u16)]
 pub struct OpenRound<'info> {
     pub host: Signer<'info>,
@@ -739,6 +1008,7 @@ pub struct Stake<'info> {
 #[instruction(round_index: u16)]
 pub struct LockRound<'info> {
     #[account(
+        mut,
         seeds = [b"channel", channel.channel_id.to_le_bytes().as_ref()],
         bump = channel.bump
     )]
@@ -756,6 +1026,7 @@ pub struct LockRound<'info> {
 pub struct ResolveRound<'info> {
     pub host: Signer<'info>,
     #[account(
+        mut,
         seeds = [b"channel", channel.channel_id.to_le_bytes().as_ref()],
         bump = channel.bump,
         has_one = host @ SquawkError::Unauthorized
@@ -797,6 +1068,7 @@ pub struct ScheduleLockCrank<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     #[account(
+        mut,
         seeds = [b"channel", channel.channel_id.to_le_bytes().as_ref()],
         bump = channel.bump
     )]

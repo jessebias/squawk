@@ -90,7 +90,7 @@ async function main(): Promise<void> {
 
   console.log(`\nSQUAWK host · channel id ${channelId.toString()}`);
   await program.methods
-    .createChannel(channelId, "⚽ Live Match Demo", new anchor.BN(Math.floor(Date.now() / 1000) + 7200))
+    .createChannel(channelId, "⚽ Live Match Demo", new anchor.BN(Math.floor(Date.now() / 1000) + 7200), 0)
     .accountsPartial({ host: payer.publicKey, config: configPda, usdcMint, channel: channelPda, vault })
     .rpc();
   for (let i = 0; i < maxRounds; i++) {
@@ -139,7 +139,7 @@ async function main(): Promise<void> {
   // go live + delegate channel and every member that joined
   await program.methods.goLive().accountsPartial({ host: payer.publicKey, channel: channelPda }).rpc();
   await program.methods
-    .delegateChannel(channelId)
+    .delegateChannel(channelId, null)
     .accountsPartial({ payer: payer.publicKey, channel: channelPda })
     .rpc({ skipPreflight: true });
   const members = await (program.account as any).member.all([
@@ -147,14 +147,14 @@ async function main(): Promise<void> {
   ]);
   for (const m of members) {
     await program.methods
-      .delegateMember(channelId, m.account.user)
+      .delegateMember(channelId, m.account.user, null)
       .accountsPartial({ payer: payer.publicKey, channel: channelPda, member: m.publicKey })
       .rpc({ skipPreflight: true });
     await sleep(250);
   }
   for (let i = 0; i < maxRounds; i++) {
     await program.methods
-      .delegateRound(channelId, i)
+      .delegateRound(channelId, i, null)
       .accountsPartial({ payer: payer.publicKey, channel: channelPda, round: roundPda(i) })
       .rpc({ skipPreflight: true });
     await sleep(250);
