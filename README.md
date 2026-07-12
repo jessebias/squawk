@@ -1,4 +1,4 @@
-# SQUAWK 🎙️
+# SQUAWK 
 
 **Walkie-talkie prediction markets. Ephemeral moments, permanent money.**
 
@@ -65,8 +65,4 @@ The full lifecycle runs on devnet — not just a happy path in a slide:
 - **Private channels** — blind betting on the TEE-backed Private ER, proven by `scripts/phase-per-lifecycle.ts` (reads gated at the TEE → blind stakes land → crank lock → reveal → settlement + withdraw).
 - **Mobile app** — the walkie-talkie UI with hold-to-stake, live odds, session-key signing, in-app hosting, and Privy / Mobile Wallet Adapter login.
 
-**On-chain proof:** program [`4NT1YGUK…Td6Ynuii`](https://explorer.solana.com/address/4NT1YGUK1YWboAq9pyKLqGsHUQaRwDAi7kpATd6Ynuii?cluster=devnet) · [example settlement commitment](https://explorer.solana.com/tx/4x2Kt2TP7Ks7xXQSN8wt7Bwii3mXtXiH8yu3pBfgJBUcT5hCv2ZtQHUK2y4BGx5eCd34Gnpkqg84G1qXWW2SGEz3?cluster=devnet) (a private-channel session collapsed to one commit).
 
-## Demo (2 minutes)
-
-Two phones side by side, both holding the PTT — odds visibly react to each other. Every hold is a real Solana transaction on the ER. Channel closes on camera: **"N transactions · 1 settlement · $0.00 fees"**, with a devnet explorer link proving the commitment landed. Ephemeral moments, permanent money.
